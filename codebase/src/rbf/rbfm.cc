@@ -279,4 +279,54 @@ int formatHeader(const void *record, void *header, const vector<Attribute> &reco
 }
 
 
+RC deleteRecord(FileHandle &fileHandle, const vector<Attribute> &recordDescriptor, const RID &rid){
+	unsigned int pageNum = rid.pageNum;
+	unsigned int slotNum = rid.slotNum;
+	if(! fileHandle.alreadyOpen() || fileHandle.getNumberOfPages() < pageNum-1){
+		return -1;
+	}
+	void *page = malloc(PAGE_SIZE);
+	fileHandle.readPage(pageNum-1,page);
+	short N = *(short *)((char *)page + PAGE_SIZE - 2);
+	short freeSpaceOffset = *(short *)((char *)page + PAGE_SIZE-4);
+	short end = *(short *)((char *)page+PAGE_SIZE-2*(slotNum+1));
+	if(slotNum > (unsigned) N | end==-1){
+			free(page);
+			return -1;
+		}
+	short start = *(short *)((char *)page + PAGE_SIZE - 2*(N+1));
+	if(start == -1){
+		for(int i=N; i>0; i--){
+			if(i==1) {
+				start = 0;
+			} else{
+				start = *(short *)((char *)page + PAGE_SIZE - (i+1)*2);
+				if(start != -1) break;
+			}
+		}
+	}
+	bool isRedirected = *(short *)((char *)page + start);
+	if(isRedirected){
+		short newPageNum = *(short *)((char *)page + start + 2);
+		short newSlotNum = *(short *)((char *)page + start + 4);
+		RID  newRid;
+		newRid.pageNum = newPageNum;
+		newRid.slotNum = newSlotNum;
+		free(page);
+		return deleteRecord(fileHandle, recordDescriptor,newRid);
+	}
+	//delete and compact the hole
+	memmove((char *)page + start,(char *)page + end, freeSpaceOffset-end);
+	//update the directory
+	memset((char *)page + PAGE_SIZE-2*(slotNum+1), -1, 2);
+	for (short i = slotNum+1; i <= N-1; i++) {
+			short oldOffset = *(short *)((char *)page + PAGE_SIZE - sizeof(short)*(i+1));
+			if (oldOffset == -1) continue;
+			short newOffset = oldOffset-(end-start);
+			memset((char *)page + PAGE_SIZE - 2*(i+1), newOffset, sizeof(short));
+		}
 
+	int rc = fileHandle.writePage(pageNum-1,page);
+	free(page);
+	return rc;
+}
