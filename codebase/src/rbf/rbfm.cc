@@ -101,21 +101,25 @@ RC RecordBasedFileManager::readRecord(FileHandle &fileHandle, const vector<Attri
 		return -1;
 	}
 	// find record start position in the page:
-//	short startPos = 0;
-//	for(short i = slotNum; i >= 1; i--) {
-//		if(i == 1){
-//			startPos = 0;
-//		}else{
-//			startPos = *(short *)((char *)page + PAGE_SIZE - (i+1)*2);
-//			if(startPos != -1) break;
-//		}
-//	}
+	short startPos = 0;
+	for(short i = slotNum; i >= 1; i--) {
+		if(i == 1){
+			startPos = 0;
+		}else{
+			startPos = *(short *)((char *)page + PAGE_SIZE - (i+1)*2);
+			if(startPos != -1) break;
+		}
+	}
 	// check if record has been relocated:
-//	if(*(short *)((char *)page + startPos) == -2){
-//
-//		//NEED TO BE IMPLEMENTED;
-//
-//	}else{
+	if(*(short *)((char *)page + startPos) == -1){
+		short newPageNum = *(short *)((char *)page + startPos + 2);
+		short newSlotNum = *(short *)((char *)page + startPos + 4);
+		RID  newRid;
+		newRid.pageNum = newPageNum;
+		newRid.slotNum = newSlotNum;
+		free(page);
+		return readRecord(fileHandle, recordDescriptor,newRid,data);
+	}else{
 		short startPos = 0;
 		startPos = slotNum == 1? 0 : *(short *)((char *)page + PAGE_SIZE - (slotNum + 1)*2);
 		int pointerSize = ceil((double) recordDescriptor.size() / SHIFT);
@@ -148,7 +152,7 @@ RC RecordBasedFileManager::readRecord(FileHandle &fileHandle, const vector<Attri
 		memcpy((char *) data + pointerSize, (char *)page + startPos + 2*(fieldSize + 1), recordLen);
 		free(nullPointer);
 		free(page);
-//	}
+	}
 
 
 	return 0;
@@ -278,8 +282,20 @@ int formatHeader(const void *record, void *header, const vector<Attribute> &reco
 	return start;
 }
 
+RC directoryUpdate(void *page, const short N,RID rid,short start, short end, short newOffset){
+	if(rid.slotNum > (unsigned)N) return -1;
 
-RC deleteRecord(FileHandle &fileHandle, const vector<Attribute> &recordDescriptor, const RID &rid){
+	memset((char *)page + PAGE_SIZE-2*(rid.slotNum+1),newOffset, 2);
+	for (short i = rid.slotNum+1; i <= N; i++) {
+			short oldOffset = *(short *)((char *)page + PAGE_SIZE - 2*(i+1));
+			if (oldOffset == -1) continue;
+			short newOffset = oldOffset-(end-start);
+			memset((char *)page + PAGE_SIZE - 2*(i+1), newOffset, 2);
+		}
+	return 0;
+}
+
+RC RecordBasedFileManager::deleteRecord(FileHandle &fileHandle, const vector<Attribute> &recordDescriptor, const RID &rid){
 	unsigned int pageNum = rid.pageNum;
 	unsigned int slotNum = rid.slotNum;
 	if(! fileHandle.alreadyOpen() || fileHandle.getNumberOfPages() < pageNum-1){
@@ -330,3 +346,77 @@ RC deleteRecord(FileHandle &fileHandle, const vector<Attribute> &recordDescripto
 	free(page);
 	return rc;
 }
+
+RC RecordBasedFileManager::updateRecord(FileHandle &fileHandle, const vector<Attribute> &recordDescriptor, const void *data, const RID &rid){
+	unsigned int pageNum = rid.pageNum;
+	unsigned int slotNum = rid.slotNum;
+	if(fileHandle.alreadyOpen()){
+		return -1;
+	}
+	void *page = malloc(PAGE_SIZE);
+	fileHandle.readPage(pageNum-1,page);
+
+	short N = *(short *)((char *)page + PAGE_SIZE-2);
+	short freeSpaceOffset = *(short *)((char *)page + PAGE_SIZE-4);
+	short end = *(short *)((char *)page+PAGE_SIZE-2*(slotNum+1));
+	if(slotNum > N | end == -1){
+			return -1;
+		}
+	short start = *(short *)((char *)page + PAGE_SIZE - 2*(N+1));
+	if(start == -1){
+		for(int i=N; i>0; i--){
+			if(i==1) {
+				start = 0;
+			} else{
+				start = *(short *)((char *)page + PAGE_SIZE - (i+1)*2);
+				if(start != -1) break;
+			}
+		}
+	}
+	//int oldDataLen = end - start;
+	void *header = malloc(1600);
+	int newFieldSize = recordDescriptor.size();
+	int newPointerSize = ceil((double) recordDescriptor.size() / 8);
+	int newDataLen = formatHeader(data, header, recordDescriptor, newFieldSize, newPointerSize);
+
+	//the old record is redirected
+	bool isRedirected = *(short *)((char *)page + start);
+	if(isRedirected){
+		short newPageNum = *(short *)((char *)page + start + 2);
+		short newSlotNum = *(short *)((char *)page + start + 4);
+		RID  newRid;
+		newRid.pageNum = newPageNum;
+		newRid.slotNum = newSlotNum;
+		free(page);
+		return updateRecord(fileHandle, recordDescriptor,data,newRid);
+	}
+	//within a page
+	if(freeSpaceOffset + newDataLen - (end -start) + 2*(N+1) <= PAGE_SIZE){
+		memmove((char *)page + start + newDataLen, (char *)page + end, freeSpaceOffset -end);
+		memcpy((char *)page + start,header, 2*(newFieldSize+1));
+		memcpy((char *)page + start + 2*(1+newFieldSize), (char *)data + newPointerSize, newDataLen -(newFieldSize + 1)*2);
+		//update the directory
+		directoryUpdate( page, N, rid, start, end, start+newDataLen);
+		fileHandle.writePage(pageNum-1,page);
+		free(page);
+		return 0;
+	}
+	//if it can not be added with the current page
+	RID newRid;
+	int res = insertRecord(fileHandle, recordDescriptor, data, newRid);
+	if(res != 0){
+		return res;
+	}
+	memset((char *)page + start, -1, 2);
+	memset((char *)page + start+2,newRid.pageNum, 2);
+	memset((char *)page + start + 4, newRid.slotNum, 2);
+	memmove((char *)page + start + 6, (char *)page + end,freeSpaceOffset-end);
+
+	//update the directory
+	directoryUpdate(page, N, rid, start+6, end, start+6);
+
+	fileHandle.writePage(pageNum-1, page);
+	free(page);
+	return 0;
+}
+
