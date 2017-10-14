@@ -350,7 +350,7 @@ RC RecordBasedFileManager::deleteRecord(FileHandle &fileHandle, const vector<Att
 RC RecordBasedFileManager::updateRecord(FileHandle &fileHandle, const vector<Attribute> &recordDescriptor, const void *data, const RID &rid){
 	unsigned int pageNum = rid.pageNum;
 	unsigned int slotNum = rid.slotNum;
-	if(fileHandle.alreadyOpen()){
+	if(！fileHandle.alreadyOpen()){
 		return -1;
 	}
 	void *page = malloc(PAGE_SIZE);
