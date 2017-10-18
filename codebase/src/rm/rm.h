@@ -11,7 +11,10 @@ using namespace std;
 
 # define RM_EOF (-1)  // end of a scan operator
 
-// RM_ScanIterator is an iteratr to go through tuples
+#define TABLE "Tables"
+#define COLUMN "Columns"
+
+// RM_ScanIterator is an iterator to go through tuples
 class RM_ScanIterator {
 public:
   RM_ScanIterator() {};
@@ -73,6 +76,9 @@ protected:
   RelationManager();
   ~RelationManager();
 
+private:
+  void prepareAttribute4Table(vector<Attribute> &tableDescriptor);
+  void prepareAttribute4Column(vector<Attribute >&columnDescriptor);
 };
 
 #endif
