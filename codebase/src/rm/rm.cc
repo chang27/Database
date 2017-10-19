@@ -23,13 +23,54 @@ RC RelationManager::createCatalog()
 	if(rc1 < 0 || rc2 < 0){
 		return -1;
 	}
+	int tid = 1;
+	int cid = 2;
+	// create Tables:
+	FileHandle tableHandle;
+	rbfm -> openFile(TABLE, tableHandle); // open Table to insert table, column;
+	void *buffer = malloc(100);
+	vector<Attribute> tableDescriptor;
+	prepareAttribute4Table(tableDescriptor);
+	int pointerSize = ceil((double) tableDescriptor.size() / 8);
+
+	prepareRecord4Tables(tid, TABLE, 6, TABLE, 6, pointerSize, buffer);
+	RID rid1;
+	rbfm->insertRecord(tableHandle, tableDescriptor, buffer, rid1);
+	free(buffer);
+
+	buffer = malloc(100);
+	//int pointerSize4C = ceil((double) columnDescriptor.size() / 8);
+	prepareRecord4Tables(cid, COLUMN, 7, COLUMN, 7, pointerSize, buffer);
+	RID rid2;
+	rbfm -> insertRecord(tableHandle, tableDescriptor, buffer, rid2);
+	free(buffer);
+
+	rbfm -> closeFile(tableHandle);
+
+	// create Columns:
+	vector<Attribute> columDescriptor;
+	prepareAttribute4Column(columDescriptor);
+
+	FileHandle columnHandle;
+	rbfm -> openFile(COLUMN, columnHandle);
+	buffer = malloc(100);
+	vector<Attribute> columnDescriptor;
+	prepareAttribute4Column(columnDescriptor);
 
 
+
+	return 0;
 }
 
 RC RelationManager::deleteCatalog()
 {
-    return -1;
+    RecordBasedFileManager *rbfm = RecordBasedFileManager:: instance();
+    RC rc1 = rbfm -> destroyFile(TABLE);
+    RC rc2 = rbfm -> destroyFile(COLUMN);
+    if(rc1 < 0 || rc2 < 0) {
+    	 return -1;
+    }
+    return 0;
 }
 
 RC RelationManager::createTable(const string &tableName, const vector<Attribute> &attrs)
@@ -160,5 +201,26 @@ void prepareAttribute4Colum(vector<Attribute> &columnDescriptor) {
 	columnDescriptor.push_back(column_position);
 
 }
+
+void prepareRecord4Tables(const int tid, const char *tableName, const int tlen, const char *fileName,
+		const int flen, int pointerSize, void *data) {
+	unsigned char *nullPointer = (unsigned char *)malloc(pointerSize);
+	memset(nullPointer, 0, pointerSize);
+	memcpy((char *)data, nullPointer, pointerSize);
+	int start = pointerSize;
+	memcpy((char *)data + start, &tid, 4);
+	start += 4;
+	memcpy((char *)data + start, &tlen, 4);
+	start += 4;
+	memcpy((char *)data + start, tableName, tlen);
+	start += tlen;
+	memcpy((char *)data + start, &flen, 4);
+	start += 4;
+	memcpy((char *)data + start, fileName, flen);
+	start += flen;
+
+}
+
+
 
 

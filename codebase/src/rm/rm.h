@@ -79,6 +79,11 @@ protected:
 private:
   void prepareAttribute4Table(vector<Attribute> &tableDescriptor);
   void prepareAttribute4Column(vector<Attribute >&columnDescriptor);
+  //RC appendTable(FileHandle &fileHandle, const int tid, int pointerSize, void* data);
+  void prepareRecord4Tables(const int tid, const char *tableName, const int tlen, const char *fileName,
+  		const int flen, const int pointerSize, void *data);
+  void prepareRecord4Columns(const int cid, const char* columnName, const int clen,
+		  AttrType type, const int len, const int pos, const int pointerSize, void * data);
 };
 
 #endif
