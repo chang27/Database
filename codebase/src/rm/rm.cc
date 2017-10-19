@@ -23,6 +23,7 @@ RC RelationManager::createCatalog()
 	if(rc1 < 0 || rc2 < 0){
 		return -1;
 	}
+
 	int tid = 1;
 	int cid = 2;
 	// create Tables:
@@ -53,11 +54,29 @@ RC RelationManager::createCatalog()
 
 	FileHandle columnHandle;
 	rbfm -> openFile(COLUMN, columnHandle);
-	buffer = malloc(100);
 	vector<Attribute> columnDescriptor;
 	prepareAttribute4Column(columnDescriptor);
+	int nullPointerSize = ceil((double) columnDescriptor.size() / 8);
+	for(int i = 1; i <= tableDescriptor.size(); i++){
+		Attribute attri = tableDescriptor[i-1];
+		buffer = malloc(100);
+		prepareRecord4Columns(tid, attri.name.c_str(), attri.name.size(), attri.type, attri.length, i, nullPointerSize, buffer);
+		//prepareRecord4Columns(tid, tableDescriptor[i-1].name, tableDescriptor[i-1].name.size(), tableDescriptor[i-1].type, tableDescriptor[i-1].length, i, nullPointerSize, buffer);
+		RID rid;
+		rbfm -> insertRecord(columnHandle, columnDescriptor, buffer, rid);
+		free(buffer);
+	}
 
+	for(int i = 1; i <= columnDescriptor.size(); i++) {
+		Attribute attri2 = columnDescriptor[i-1];
+		buffer = malloc(100);
+		prepareRecord4Columns(cid, attri2.name.c_str(), attri2.name.size(), attri2.type, attri2.length, i, nullPointerSize, buffer);
+		RID rid;
+		rbfm -> insertRecord(columnHandle, columnDescriptor, buffer, rid);
+		free(buffer);
+	}
 
+	rbfm -> closeFile(columnHandle);
 
 	return 0;
 }
@@ -203,7 +222,7 @@ void prepareAttribute4Colum(vector<Attribute> &columnDescriptor) {
 }
 
 void prepareRecord4Tables(const int tid, const char *tableName, const int tlen, const char *fileName,
-		const int flen, int pointerSize, void *data) {
+		const int flen, const int pointerSize, void *data) {
 	unsigned char *nullPointer = (unsigned char *)malloc(pointerSize);
 	memset(nullPointer, 0, pointerSize);
 	memcpy((char *)data, nullPointer, pointerSize);
@@ -218,9 +237,28 @@ void prepareRecord4Tables(const int tid, const char *tableName, const int tlen, 
 	start += 4;
 	memcpy((char *)data + start, fileName, flen);
 	start += flen;
+	free(nullPointer);
 
 }
 
-
+void prepareRecord4Columns(const int cid, const char* columnName, const int clen, AttrType type, const int len, const int pos, const int pointerSize, void * data) {
+	unsigned char* nullPointer = (unsigned char *)malloc(pointerSize);
+	memset(nullPointer, 0, pointerSize);
+	memcpy((char *)data, nullPointer, pointerSize);
+	int start = pointerSize;
+	memcpy((char *)data + start, &cid, 4);
+	start += 4;
+	memcpy((char *)data + start, &clen, 4);
+	start += 4;
+	memcpy((char *)data + start, columnName, clen);
+	start += clen;
+	memcpy((char *)data + start, &type, 4);
+	start += 4;
+	memcpy((char *)data + start, &len, 4);
+	start += 4;
+	memcpy((char *)data + start, &pos, 4);
+	start += 4;
+	free(nullPointer);
+}
 
 
