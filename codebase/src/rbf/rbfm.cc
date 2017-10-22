@@ -460,3 +460,47 @@ RC RecordBasedFileManager::updateRecord(FileHandle &fileHandle, const vector<Att
 	return 0;
 }
 
+RC RecordBasedFileManager::readAttribute(FileHandle &fileHandle, const vector<Attribute> &recordDescriptor, const RID &rid, const string &attributeName, void *data){
+	if(! fileHandle.alreadyOpen()) {
+		return -1;
+	}
+	void *page = malloc(PAGE_SIZE);
+	int rc1 = readRecord(fileHandle, recordDescriptor, rid, page);
+	if(rc1 < 0){
+		return -1;
+	}
+	int pointerSize = ceil((double) recordDescriptor.size() / 8);
+	int fieldSize = recordDescriptor.size();
+	memcpy((char *)data, page, pointerSize);
+
+	int start = pointerSize;
+	for(int i = 0; i < fieldSize; i++){
+		Attribute attribute = recordDescriptor[i];
+		if(attribute.name != attributeName) {
+			int oldStart = start;
+			start += attribute.type == TypeVarChar ? *(int *)((char *)page + oldStart) + 4 : 4;
+		}else{
+			if(attribute.type == TypeVarChar) {
+				memcpy((char *)data + pointerSize, (char *)page + start, 4 + *(int *)((char *)page + start));
+			}else{
+				memcpy((char *)data + pointerSize, (char *)page + start, 4);
+			}
+			break;
+		}
+	}
+	free(page);
+
+
+	return 0;
+}
+RC RecordBasedFileManager::scan(FileHandle &fileHandle,
+      const vector<Attribute> &recordDescriptor,
+      const string &conditionAttribute,
+      const CompOp compOp,                  // comparision type such as "<" and "="
+      const void *value,                    // used in the comparison
+      const vector<string> &attributeNames, // a list of projected attributes
+      RBFM_ScanIterator &rbfm_ScanIterator) {
+	return -1;
+}
+
+
