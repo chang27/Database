@@ -88,6 +88,7 @@ private:
   int getNextID();
   RC callInsertRecord(const string &fileName, const vector<Attribute>& descriptor, const void *data, RID &rid);
   RC callDeleteRecord(const string &fileName, const vector<Attribute>& descriptor, RID &rid);
+  RC delete4Table(const vector<Attribute> &attrs, const void*data, int &tableID, const string &attribute);
 };
 
 #endif
