@@ -9,6 +9,7 @@ RelationManager* RelationManager::instance()
 
 RelationManager::RelationManager()
 {
+
 }
 
 RelationManager::~RelationManager()
@@ -61,7 +62,8 @@ RC RelationManager::createCatalog()
 		Attribute attri = tableDescriptor[i-1];
 		buffer = malloc(100);
 		prepareRecord4Columns(tid, attri.name.c_str(), attri.name.size(), attri.type, attri.length, i, nullPointerSize, buffer);
-		//prepareRecord4Columns(tid, tableDescriptor[i-1].name, tableDescriptor[i-1].name.size(), tableDescriptor[i-1].type, tableDescriptor[i-1].length, i, nullPointerSize, buffer);
+
+
 		RID rid;
 		rbfm -> insertRecord(columnHandle, columnDescriptor, buffer, rid);
 		free(buffer);
@@ -143,7 +145,37 @@ RC RelationManager::deleteTable(const string &tableName)
 {
 	if(tableName == TABLE || tableName == COLUMN) return -1;
 
+	void *buffer = malloc(54); //for varchar:  50 for char, 4 for int.
+	int tableLength = tableName.size();
+	memcpy(buffer, &tableLength, 4);
+	memcpy((char *)buffer + 4, tableName.c_str(), tableLength);
+
+	vector<string> attr;
+	attr.push_back("table-id");
+	attr.push_back("table-name");
+
     return -1;
+}
+
+RC RelationManager::delete4Table(const vector<Attribute> &attrs, const void * data, int &tableID, const string &attribute){
+	RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
+	FileHandle fileHandle;
+	RBFM_ScanIterator iterator;
+
+
+	vector<Attribute> tableDescriptor;
+	prepareAttribute4Table(tableDescriptor);
+
+	rbfm -> openFile(TABLE, fileHandle);
+	CompOp comparator = EQ_OP;
+	string name = "table-name";
+	//rbfm ->scan(fileHandle, tableDescriptor, attribute, comparator, data, attrs, iterator);
+	//rbfm -> scan(fileHandle, tableDescriptor, name, comparator, data, attrs, scanner); //rbfm -> scan(fileHandle, tableDescriptor, attribute, comparator, data, attrs, scanner);
+
+
+
+	return -1;
+
 }
 
 RC RelationManager::getAttributes(const string &tableName, vector<Attribute> &attrs)
@@ -168,17 +200,69 @@ RC RelationManager::updateTuple(const string &tableName, const void *data, const
 
 RC RelationManager::readTuple(const string &tableName, const RID &rid, void *data)
 {
-    return -1;
+	RecordBasedFileManager *rfbm = RecordBasedFileManager::instance();
+	FileHandle fileHandle;
+	vector<Attribute> attributes;
+
+	RC rc1 = getAttributes(tableName, attributes);
+	if(rc1 < 0){
+		return -1;
+	}
+
+	RC rc2 = rfbm -> openFile(tableName, fileHandle);
+
+	if(rc2 < 0) {
+		rfbm -> closeFile(fileHandle);
+		return -1;
+	}
+
+	RC rc3 = rfbm -> readRecord(fileHandle, attributes, rid, data);
+	if(rc3 < 0) {
+		rfbm -> closeFile(fileHandle);
+		return -1;
+	}
+	rfbm -> closeFile(fileHandle);
+	return 0;
+
 }
 
 RC RelationManager::printTuple(const vector<Attribute> &attrs, const void *data)
 {
-	return -1;
+	RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
+	RC rc = rbfm -> printRecord(attrs, data);
+	if(rc < 0){
+		return -1;
+	}
+
+	return 0;
 }
 
 RC RelationManager::readAttribute(const string &tableName, const RID &rid, const string &attributeName, void *data)
 {
-    return -1;
+	vector<Attribute> attributes;
+	RC rc1 = getAttributes(tableName, attributes);
+	if(rc1 < 0) {
+		return -1;
+	}
+
+	RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
+	FileHandle fileHandle;
+	RC rc2 = rbfm -> openFile(tableName, fileHandle);
+	if(rc2 < 0) {
+		rbfm -> closeFile(fileHandle);
+		return -1;
+	}
+
+	RC rc3 = rbfm -> readAttribute(fileHandle, attributes, rid, attributeName, data);
+
+	if(rc3 < 0){
+		rbfm -> closeFile(fileHandle);
+		return -1;
+	}
+
+	rbfm -> closeFile(fileHandle);
+    return 0;
+
 }
 
 
@@ -320,7 +404,7 @@ int getNextID() {
 	return -1;
 }
 
-RC callInsertRecord(const string &fileName, const vector<Attribute>& descriptor, const void *data, RID &rid) {
+RC RelationManager::callInsertRecord(const string &fileName, const vector<Attribute>& descriptor, const void *data, RID &rid) {
 	FileHandle fileHandle;
 	RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
 	RC rc1 = rbfm -> openFile(fileName, fileHandle);
@@ -332,7 +416,7 @@ RC callInsertRecord(const string &fileName, const vector<Attribute>& descriptor,
 	return rc2;
 }
 
-RC callDeleteRecord(const string &fileName, const vector<Attribute>& descriptor, RID &rid) {
+RC RelationManager::callDeleteRecord(const string &fileName, const vector<Attribute>& descriptor, RID &rid) {
 	FileHandle fileHandle;
 	RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
 	RC rc1 = rbfm -> openFile(fileName, fileHandle);
@@ -346,11 +430,9 @@ RC callDeleteRecord(const string &fileName, const vector<Attribute>& descriptor,
 	return rc2;
 }
 
-RC delete4Table(){
 
-}
 
 RC delete4Column(){
-
+  return -1;
 }
 
