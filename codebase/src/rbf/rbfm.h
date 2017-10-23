@@ -47,7 +47,7 @@ typedef enum { EQ_OP = 0, // no condition// =
 
 int formatHeader(const void *record, void *header, const vector<Attribute> &recordDescriptor, const int &fieldSize, const int &pointerSize);
 short locatePos(int size, RID &rid, FileHandle &fileHandle);
-
+//int updateDirectory(void *page, short N, RID &rid, short dist, short newStart,short newPageOffset, short oldStart);
 
 /********************************************************************************
 The scan iterator is NOT required to be implemented for the part 1 of the project 
@@ -66,7 +66,9 @@ The scan iterator is NOT required to be implemented for the part 1 of the projec
 
 class RBFM_ScanIterator {
 public:
-  RBFM_ScanIterator() {};
+  RBFM_ScanIterator() {
+
+  };
   ~RBFM_ScanIterator() {};
 
   // Never keep the results in the memory. When getNextRecord() is called, 

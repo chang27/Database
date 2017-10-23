@@ -60,20 +60,36 @@ RC RecordBasedFileManager::insertRecord(FileHandle &fileHandle, const vector<Att
 	if(size <= 0) return -1;
 
     short start = locatePos(size, rid, fileHandle);          // find a position for this record
-    short end = start + size; 					           //record ending position
-    short freesize = PAGE_SIZE - (rid.slotNum + 2)*2 - end; //update free space of this page
-    cout<<"the free size now is"<<freesize<<endl;
+   // short end = start + size;//record ending position
+    short freeOffset = start + size;
+  //  short freesize = PAGE_SIZE - (rid.slotNum + 2)*2 - end; //update free space of this page
+  //cout<<"the free size now is"<<freesize<<endl;
 
 
     fileHandle.readPage(rid.pageNum -1, page);
-    memcpy((char *)page + PAGE_SIZE - 2, (void *)&rid.slotNum, 2); // update total number of records;
-    memcpy((char *)page + PAGE_SIZE - 4, (void *)&freesize, 2);    // update free space available on this page;
+    short N = *(short *)((char *)page + PAGE_SIZE - 2);
+    if(rid.slotNum > (unsigned) N){
+    			N = rid.slotNum;
+    			memcpy((char *)page + PAGE_SIZE - 2, &N, 2);
+    }
+
+
+   // memcpy((char *)page + PAGE_SIZE - 2, (void *)&rid.slotNum, 2); // update total number of records;
+
+    memcpy((char *)page + PAGE_SIZE - 4, &freeOffset, 2);    // update free space offset on this page;
     memcpy((char *)page + start, header, 2*fieldSize + 2);
+
     memcpy((char *)page + start + 2*(1+fieldSize), (char *)data + pointerSize, size -(fieldSize + 1)*2); // update content of the record;
-    memcpy((char *)page + PAGE_SIZE - (rid.slotNum + 2)*2, (void *)&end, 2); //update where to begin for next record;
+    memcpy((char *)page + PAGE_SIZE - (rid.slotNum + 2)*2, (void *)&start, 2); //update where to begin for this record;
+
+    cout<<"the offset for "<<rid.slotNum<<"th slot is "<<start<<endl;
+    cout<<"the lenght is"<<size<<endl;
+    cout<<"the first field offset   "<<*(short *)((char *)page + start + 2)<<endl;
+    cout<<"the last field offset   "<<*(short *)((char *)page + start + 2*fieldSize)<<endl;
 
     fileHandle.writePage(rid.pageNum - 1, page);
-
+    //cout<<"insert into page :" <<  rid.pageNum <<endl;
+    //cout<<"insert into slot :" << rid.slotNum  <<endl;
     free(page);
     free(header);
     return 0;
@@ -81,6 +97,8 @@ RC RecordBasedFileManager::insertRecord(FileHandle &fileHandle, const vector<Att
 
 RC RecordBasedFileManager::readRecord(FileHandle &fileHandle, const vector<Attribute> &recordDescriptor, const RID &rid, void *data) {
 	int SHIFT = 8;
+	cout<<"read from page :" << rid.pageNum  <<endl;
+	cout<<"read from slot :" << rid.slotNum  <<endl;
 	unsigned int pageNum = rid.pageNum -1;
 	unsigned int slotNum = rid.slotNum;
 	// check if fileHandle is closed or pageNum if out of range:
@@ -105,16 +123,17 @@ RC RecordBasedFileManager::readRecord(FileHandle &fileHandle, const vector<Attri
 		return -1;
 	}
 	// find record start position in the page:
-	short startPos = 0;
-	for(short i = slotNum; i >= 1; i--) {
-		if(i == 1){
-			startPos = 0;
-		}else{
-			startPos = *(short *)((char *)page + PAGE_SIZE - (i+1)*2);
-			if(startPos != -1) break;
-		}
-	}
+	//short startPos = *(short *)((char *)page + PAGE_SIZE - 4);
+//	for(short i = slotNum; i >= 1; i--) {
+//		if(i == 1){
+//			startPos = 0;
+//		}else{
+//			startPos = *(short *)((char *)page + PAGE_SIZE - (i+1)*2);
+//			if(startPos != -1) break;
+//		}
+//	}
 	// check if record has been relocated:
+	short startPos = offSet;
 	cout<<"here is fine2"<<endl;
 	if(*(short *)((char *)page + startPos) == -1){
 		cout<<"here is fine3"<<endl;
@@ -207,20 +226,44 @@ RC RecordBasedFileManager::printRecord(const vector<Attribute> &recordDescriptor
 }
 
 // Assisting Methods listed below:
-short getOffset(void *page, short N){
-	short freeSpaceOffset = *(short *)((char *)page +PAGE_SIZE-2*(N+2));
-	if(freeSpaceOffset !=-1){
-		return freeSpaceOffset;
-	}else{
-		for(short i=N-1; i>0; i--){
-			if(i==1) return 0;
-			freeSpaceOffset = *(short *)((char *)page + PAGE_SIZE - 2*(i+2));
-			if(freeSpaceOffset==-1) continue;
-			return freeSpaceOffset;
+
+short getFreeSpace(void *page) {
+	short N = *(short *)((char *)page + PAGE_SIZE - 2);
+	short offset = *(short *)((char *)page + PAGE_SIZE - 4) + 2*(N + 2);
+	short freeSpace = PAGE_SIZE - offset;
+	return freeSpace;
+}
+
+// find a slot number for the new record, prerequisite is the space on this page is enough for the record.
+RC findAvailableSlot(void *page, unsigned short &slot, short &start) {
+	short N = *(short *)((char *)page + PAGE_SIZE - 2);
+	start = *(short *)((char *)page + PAGE_SIZE - 4);
+	short offset;
+	for(short i = 1; i <= N; i++){
+		offset = *(short *)((char *)page +PAGE_SIZE-2*(i+2));
+		if((offset) == -1) {
+			slot = i;
+			return 0;
 		}
 	}
-	return -1;
+	slot = N+1;
+	return 0;
 }
+
+//short getOffset(void *page, short N){
+//	short freeSpaceOffset = *(short *)((char *)page +PAGE_SIZE-2*(N+2));
+//	if(freeSpaceOffset !=-1){
+//		return freeSpaceOffset;
+//	}else{
+//		for(short i=N-1; i>0; i--){
+//			if(i==1) return 0;
+//			freeSpaceOffset = *(short *)((char *)page + PAGE_SIZE - 2*(i+2));
+//			if(freeSpaceOffset==-1) continue;
+//			return freeSpaceOffset;
+//		}
+//	}
+//	return -1;
+//}
 short locatePos(int size, RID &rid, FileHandle &fileHandle){
 	int curPage = fileHandle.getNumberOfPages();
 	int totalPage = fileHandle.getNumberOfPages();
@@ -235,19 +278,22 @@ short locatePos(int size, RID &rid, FileHandle &fileHandle){
 	}else{
 		fileHandle.readPage(curPage - 1, data);
 		short N = *(short *)((char *)data + PAGE_SIZE - 2);
-		start = getOffset(data,N);
+		//start = getOffset(data,N);
 		//start = *(int *)((char *)data + PAGE_SIZE - 2*(N + 2));
-		short F = *(short *)((char *)data + PAGE_SIZE - 2*2);
-		if(F < size + 2){ // need to find page before.
+		//short F = *(short *)((char *)data + PAGE_SIZE - 2*2);
+		short freeSpace = getFreeSpace(data);
+		if(freeSpace < size + 2){ // need to find page before.
 			for(int i = 1; i < curPage; i++){
 				fileHandle.readPage(i-1, data);
 				N = *(short *)((char *)data + PAGE_SIZE - 2);
 				//start = *(int *)((char *)data + PAGE_SIZE - 2 * (N + 2));
-				start = getOffset(data,N);
-				F = *(short *)((char *)data + PAGE_SIZE - 2*2);
-				if(N == 0 || F >= size + 2){
+				//start = getOffset(data,N);
+				//F = *(short *)((char *)data + PAGE_SIZE - 2*2);
+				freeSpace = getFreeSpace(data);
+				if(N == 0 || freeSpace >= size + 2){
 					curPage = i;
-					slot = N+1;
+					//slot = N+1;
+					findAvailableSlot(data, slot, start);
 					break;
 				}
 			}
@@ -260,7 +306,8 @@ short locatePos(int size, RID &rid, FileHandle &fileHandle){
 			}
 
 		}else{ //find space on last page.
-			slot = N + 1;
+			//slot = N + 1;
+			findAvailableSlot(data, slot, start);
 		}
 
 	}
@@ -275,7 +322,7 @@ int formatHeader(const void *record, void *header, const vector<Attribute> &reco
 	int SHIFT = 8;
 	short *pointer = new short[fieldSize + 1];
 	int start = (fieldSize + 1) * 2;
-	pointer[0] = fieldSize;
+	pointer[0] = 0;
 
 	for(int i = 1; i <= fieldSize; i++) {
 		bool null = *((unsigned char *)record + (i - 1)/SHIFT) & (1 << (SHIFT - 1 - (i-1)%SHIFT));
@@ -302,27 +349,51 @@ int formatHeader(const void *record, void *header, const vector<Attribute> &reco
 			}
 		}
 	}
+	pointer[0] = fieldSize;
 	for(int i = 0; i <= fieldSize; i++) {
 		memcpy((char *)header + 2*i, &pointer[i], 2);
 	}
 	return start;
 }
 
-RC directoryUpdate(void *page, short N,RID rid,short dist, short newOffset,short newAvai){
-	if(rid.slotNum > (unsigned)N) return -1;
 
-	memcpy((char *)page + PAGE_SIZE-2*(rid.slotNum+2),(void *)&newOffset, 2);
-	memcpy((char *)page+PAGE_SIZE-4, (void *)&newAvai,2);
-	for (short i = rid.slotNum+1; i <= N; i++) {
-			short oldOffset = *(short *)((char *)page + PAGE_SIZE - 2*(i+2));
-			if (oldOffset == -1) continue;
-			short newOffset = oldOffset-dist;
-			memcpy((char *)page + PAGE_SIZE - 2*(i+2), (void *)&newOffset, 2);
-		}
-	return 0;
-}
 //find the freeSpaceOffset
 
+short getRecordSize(void *page, const short &start){
+	short fieldSize = *(short *)((char *)page + start);
+	cout<<"the fieldSize is"<<fieldSize<<endl;
+	cout<<"the offset of last field is"<<*(short *)((char *)page + start + 2*fieldSize)<<endl;
+
+	short recordLen = *(short *)((char *)page + start + 2*fieldSize) + 2*(fieldSize + 1);
+	cout<<"the recordlenght is"<<recordLen<<endl;
+	return recordLen;
+
+}
+
+int updateDirectory(void *page, short N, const RID &rid, short dist, short newStart, short newPageOffset, short oldStart){
+
+	if(rid.slotNum > (unsigned) N) return -1;
+
+	memcpy((char *)page + PAGE_SIZE-2*(rid.slotNum+2), (void *)& newStart, 2);
+
+	memcpy((char *)page+PAGE_SIZE-4, (void *)&newPageOffset, 2);
+
+	//if(dist == 0) return 0;
+
+	for (short i = 1; i <= N; i++) {
+			//if(i == slotNum) continue;
+			short oldOffset = *(short *)((char *)page + PAGE_SIZE - 2*(i+2));
+
+			if (oldOffset == -1 || oldOffset <= oldStart) continue;
+
+			short newOffset = oldOffset - dist;
+
+			memcpy((char *)page + PAGE_SIZE - 2*(i+2), (void *)&newOffset, 2);
+			cout<<"the new offset for the "<<i<<"th slot is"<<newOffset<<endl;
+		}
+
+	return 0;
+}
 
 RC RecordBasedFileManager::deleteRecord(FileHandle &fileHandle, const vector<Attribute> &recordDescriptor, const RID &rid){
 	unsigned int pageNum = rid.pageNum;
@@ -333,28 +404,38 @@ RC RecordBasedFileManager::deleteRecord(FileHandle &fileHandle, const vector<Att
 	void *page = malloc(PAGE_SIZE);
 	fileHandle.readPage(pageNum-1,page);
 	short N = *(short *)((char *)page + PAGE_SIZE - 2);
+
+	//to check the rid is in this page:
 	if(slotNum >(unsigned)N){
 		free(page);
 		return -1;
 	}
-	short freeSpaceOffset = getOffset(page,N);
+
+	//short freeSpaceOffset = getOffset(page,N);
+	short freeSpaceOffset = *(short *)((char *)page + PAGE_SIZE-4);
 	//cout<<"the freeSpaceOffset at deletion is"<<freeSpaceOffset<<endl;
-	short availableSpace = *(short *)((char *)page + PAGE_SIZE-4);
-	short end = *(short *)((char *)page+PAGE_SIZE-2*(slotNum+2));// changed here!!!!!
-	if(end==-1){
+	//short availableSpace = *(short *)((char *)page + PAGE_SIZE-4);
+	//short availableSpace = getFreeSpace(page);
+
+	//check if the record to be deleted has already been deleted:
+	short start = *(short *)((char *)page+PAGE_SIZE-2*(slotNum+2));// changed here!!!!!
+	if(start==-1){
 			free(page);
 			return -1;
 		}
+
+
 	//find the start point
-	short start = 0;
-	for(short i = slotNum; i >= 1; i--) {
-			if(i == 1){
-				start = 0;
-			}else{
-				start = *(short *)((char *)page + PAGE_SIZE - (i+1)*2);
-				if(start != -1) break;
-			}
-		}
+//	short start = 0;
+//	for(short i = slotNum; i >= 1; i--) {
+//			if(i == 1){
+//				start = 0;
+//			}else{
+//				start = *(short *)((char *)page + PAGE_SIZE - (i+1)*2);
+//				if(start != -1) break;
+//			}
+//		}
+	short end = start + getRecordSize(page, start);
 
 	short isRedirected = *(short *)((char *)page + start);
 	if(isRedirected == -1){
@@ -370,7 +451,11 @@ RC RecordBasedFileManager::deleteRecord(FileHandle &fileHandle, const vector<Att
 	//move the follow part forward by end-start
 	memmove((char *)page + start,(char *)page + end, freeSpaceOffset-end);
 	//update the directory
-	directoryUpdate(page, N,rid,end-start, -1,availableSpace+(end-start));
+	//directoryUpdate(page, N,rid,end-start, -1,availableSpace+(end-start));
+	short distance = end - start;
+	freeSpaceOffset -= distance;
+	updateDirectory(page, N, rid, distance, -1, freeSpaceOffset, start);
+
 	RC rc = fileHandle.writePage(pageNum-1,page);
 	if(rc!=0){
 		free(page);
@@ -379,36 +464,44 @@ RC RecordBasedFileManager::deleteRecord(FileHandle &fileHandle, const vector<Att
 	free(page);
 	return 0;
 }
+
+
+
 RC RecordBasedFileManager::updateRecord(FileHandle &fileHandle, const vector<Attribute> &recordDescriptor, const void *data, const RID &rid){
 
 
 	unsigned int pageNum = rid.pageNum;
 	unsigned int slotNum = rid.slotNum;
-	cout<<"success at start "<<endl;
 	if(!fileHandle.alreadyOpen()){
 		return -1;
 	}
 	void *page = malloc(PAGE_SIZE);
 	//void *oldR = malloc(2000);
 	fileHandle.readPage(pageNum-1,page);
-	short N = *(short *)((char *)page + PAGE_SIZE-2);
-	short freeSpaceOffset = getOffset(page,N);
-	short availableSpace = *(short *)((char *)page + PAGE_SIZE-4);
-	short end = *(short *)((char *)page+PAGE_SIZE-2*(slotNum+2));
-	if(slotNum > (unsigned)N | end == -1){
+	short N = *(short *)((char *)page + PAGE_SIZE - 2);
+	//short freeSpaceOffset = getOffset(page,N);
+	//short availableSpace = *(short *)((char *)page + PAGE_SIZE-4);
+	short freeSpaceOffset = *(short *)((char *)page + PAGE_SIZE - 4);
+	short availableSpace = getFreeSpace(page);
+	short start = *(short *)((char *)page+PAGE_SIZE-2*(slotNum+2));
+
+	short end = start + getRecordSize(page, start);
+
+	if(slotNum > (unsigned) N || start == -1){
 		free(page);
 		return -1;
+
 		}
 
-	short start = 0;
-	for(short i=slotNum; i>0; i--){
-		if(i==1){
-			start=0;
-		}else{
-			start = *(short *)((char *)page+PAGE_SIZE-2*(i+1));
-			if(start != -1) break;
-		}
-	}
+//	short start = 0;
+//	for(short i=slotNum; i>0; i--){
+//		if(i==1){
+//			start=0;
+//		}else{
+//			start = *(short *)((char *)page+PAGE_SIZE-2*(i+1));
+//			if(start != -1) break;
+//		}
+//	}
 	//the old record is redirected
 	short isRedirected = *(short *)((char *)page + start);
 	if(isRedirected==-1){
@@ -418,7 +511,7 @@ RC RecordBasedFileManager::updateRecord(FileHandle &fileHandle, const vector<Att
 		newRid.pageNum = newPageNum;
 		newRid.slotNum = newSlotNum;
 		free(page);
-		return updateRecord(fileHandle, recordDescriptor,data,newRid);
+		return updateRecord(fileHandle, recordDescriptor,data, newRid);
 	}
 
 	void *header = malloc(1600);
@@ -427,15 +520,25 @@ RC RecordBasedFileManager::updateRecord(FileHandle &fileHandle, const vector<Att
 	int newDataLen = formatHeader(data, header, recordDescriptor, newFieldSize, newPointerSize);
 	//if the current page is enough for the update
 	if(availableSpace-newDataLen+(end-start)>=0){
-		cout<<"success at middle "<<endl;
-		memmove((char *)page + start + newDataLen, (char *)page + end, freeSpaceOffset -end);
-		cout<<"success 1 "<<endl;
+		memmove((char *)page + start + newDataLen, (char *)page + end, freeSpaceOffset - end);
 		memcpy((char *)page + start,header, 2*(newFieldSize+1));
 		memcpy((char *)page + start + 2*(1+newFieldSize), (char *)data + newPointerSize, newDataLen -(newFieldSize + 1)*2);
 
 		//update the directory
+		//short distance = end - start - newDataLen;
+		freeSpaceOffset = freeSpaceOffset + newDataLen - (end - start);
 
-		directoryUpdate(page, N, rid,end-start-newDataLen, start+newDataLen,availableSpace-newDataLen+(end-start));
+		//updateDirectory(void *page, const short &N, const RID &rid, const short &dist, const short &newStart, const short &newPageOffset, const short &oldStart)
+		//if((end - start) != newDataLen) {
+
+		updateDirectory(page, N, rid, end-start - newDataLen, start, freeSpaceOffset, start);
+		cout<<"the start is"<<start <<endl;
+		cout<<"the end is"<<end<<endl;
+		cout<<"the newdatalength is"<<newDataLen<<endl;
+		cout<<"the distance is"<<end-start - newDataLen<<endl;
+		cout<<"the freespaceoffset is"<<freeSpaceOffset<<endl;
+		//}
+		//directoryUpdate(page, N, rid,end-start-newDataLen, start+newDataLen,availableSpace-newDataLen+(end-start));
 	}else{
 		//find a new page to insert the data, change the old data to redirection info
 		RID newRid;
@@ -444,14 +547,17 @@ RC RecordBasedFileManager::updateRecord(FileHandle &fileHandle, const vector<Att
 			free(page);
 			return rc;
 		}
-		memmove((char *)page+start+6, (char *)page+end, freeSpaceOffset-end);
+		memmove((char *)page+start+2*(2 + 1), (char *)page+end, freeSpaceOffset-end);
 		memset((char *)page+start, -1, 2);
 		short newPage = newRid.pageNum;
 		short newSlot = newRid.slotNum;
 		memcpy((char *)page+start+2, (void *)&newPage, 2);
 		memcpy((char *)page+start+4, (void *)&newSlot, 2);
 		// update the directory
-		directoryUpdate(page, N, rid,end-start-6, start+6,availableSpace-6+(end-start));
+		short distance = end - start - 2 * (2 + 1);
+		freeSpaceOffset -= distance;
+		updateDirectory(page, N, rid, distance, start, freeSpaceOffset, start);
+		//directoryUpdate(page, N, rid,end-start-6, start+6,availableSpace-6+(end-start));
 	}
 
 	fileHandle.writePage(pageNum-1, page);
