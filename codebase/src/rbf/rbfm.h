@@ -72,8 +72,29 @@ public:
   // Never keep the results in the memory. When getNextRecord() is called, 
   // a satisfying record needs to be fetched from the file.
   // "data" follows the same format as RecordBasedFileManager::insertRecord().
-  RC getNextRecord(RID &rid, void *data) { return RBFM_EOF; };
-  RC close() { return -1; };
+  RC getNextRecord(RID &rid, void *data);
+  RC close() {
+	  free(page);
+	  fileHandle.close();
+	  return 0;
+  }
+  RC initializeSI( void *page,
+		  	  FileHandle &fileHandle,
+		  	  const vector<Attribute> &recordDescriptor,
+		  	  const string conditionAttribute,
+			  const CompOp compOp,
+			  const void *value,
+			  const vector<string> &attributeNames);
+
+private:
+  FileHandle fileHandle;
+  RID currentRid;
+  vector<Attribute> recordDescriptor;
+  string conditionAttribute;
+  CompOp compOp;
+  const void *value;
+  vector<string> attributeNames;
+  void *page;
 };
 
 

@@ -256,7 +256,7 @@ void prepareAttribute4Colum(vector<Attribute> &columnDescriptor) {
 	column_position.type = TypeInt;
 	column_position.length = sizeof(int);
 
-	columnDescriptor = {};
+	//columnDescriptor = {};
 	columnDescriptor.push_back(table_id);
 	columnDescriptor.push_back(column_name);
 	columnDescriptor.push_back(column_type);
