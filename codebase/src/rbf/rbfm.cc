@@ -741,9 +741,9 @@ RC reformRecord(const vector<string> &attributeNames,
 				if(j==0){
 					fieldStart = 0;
 				}else{
-					fieldStart = *(short *)((char *)oldRecord+(j-1)*2);
+					fieldStart = *(short *)((char *)oldRecord+j*2);
 				}
-				short fieldEnd = *(short *)((char *)oldRecord + j*2);
+				short fieldEnd = *(short *)((char *)oldRecord + (j+1)*2);
 
 				memcpy((char *)tempRecord+newOffset, (char *)oldRecord+2*(1+oldFieldSize)+fieldStart,fieldEnd-fieldStart);
 				newOffset += (fieldEnd- fieldStart);

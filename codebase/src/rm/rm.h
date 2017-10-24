@@ -25,9 +25,21 @@ public:
   RC close() { return -1; };
 };
 
-
+void prepareAttribute4Table(vector<Attribute> &tableDescriptor);
+void prepareAttribute4Column(vector<Attribute >&columnDescriptor);
+  //RC appendTable(FileHandle &fileHandle, const int tid, int pointerSize, void* data);
+void prepareRecord4Tables(const int tid, const char *tableName, const int tlen, const char *fileName,
+  		const int flen, const int pointerSize, void *data);
+void prepareRecord4Columns(const int cid, const char* columnName, const int clen,
+		  AttrType type, const int len, const int pos, const int pointerSize, void * data);
+bool tableNameOccuppied(const string  & tableName);
+  RC getNextID();
+  int callInsertRecord(const string &fileName, const vector<Attribute>& descriptor, const void *data, RID &rid);
+  int callDeleteRecord(const string &fileName, const vector<Attribute>& descriptor, RID &rid);
+  int delete4Table(const vector<Attribute> &attrs, const void*data, int &tableID, const string &attribute);
 // Relation Manager
-class RelationManager
+
+  class RelationManager
 {
 public:
   static RelationManager* instance();
@@ -77,18 +89,7 @@ protected:
   ~RelationManager();
 
 private:
-  void prepareAttribute4Table(vector<Attribute> &tableDescriptor);
-  void prepareAttribute4Column(vector<Attribute >&columnDescriptor);
-  //RC appendTable(FileHandle &fileHandle, const int tid, int pointerSize, void* data);
-  void prepareRecord4Tables(const int tid, const char *tableName, const int tlen, const char *fileName,
-  		const int flen, const int pointerSize, void *data);
-  void prepareRecord4Columns(const int cid, const char* columnName, const int clen,
-		  AttrType type, const int len, const int pos, const int pointerSize, void * data);
-  bool tableNameOccuppied(const string  & tableName);
-  int getNextID();
-  RC callInsertRecord(const string &fileName, const vector<Attribute>& descriptor, const void *data, RID &rid);
-  RC callDeleteRecord(const string &fileName, const vector<Attribute>& descriptor, RID &rid);
-  RC delete4Table(const vector<Attribute> &attrs, const void*data, int &tableID, const string &attribute);
+
 };
 
 #endif
