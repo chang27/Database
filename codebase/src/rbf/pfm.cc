@@ -113,7 +113,7 @@ RC FileHandle::readPage(PageNum pageNum, void *data)
 
 	fread(data, 1, PAGE_SIZE, file);
 
-	readPageCounter++;
+	readPageCounter += 1;
 	rewind(file);
 	return 0;
 }
@@ -132,7 +132,7 @@ RC FileHandle::writePage(PageNum pageNum, const void *data)
 
 	fwrite(data, 1, PAGE_SIZE, file);
 
-	writePageCounter++;
+	writePageCounter += 1;
 	fflush(file);
     return 0;
 }
@@ -150,7 +150,7 @@ RC FileHandle::appendPage(const void *data)
 		return -1;
 	}
 
-	appendPageCounter++;
+	appendPageCounter += 1;
 	fflush(file);
 	return 0;
 

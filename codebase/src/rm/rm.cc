@@ -16,6 +16,40 @@ RelationManager::~RelationManager()
 {
 }
 
+int getNextID(int &nextID) {
+	RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
+	RBFM_ScanIterator rbfmsi ;
+	FileHandle fileHandle;
+	rbfm->openFile(TABLE,fileHandle);
+	vector<Attribute> tableDescriptor;
+	prepareAttribute4Table(tableDescriptor);
+
+	vector<string> conditionAttribute;
+	conditionAttribute.push_back("table-id");
+	void *value = NULL;
+	RC rc=rbfm->scan(fileHandle,tableDescriptor,"",NO_OP,value,conditionAttribute,rbfmsi);
+	if(rc!=0){
+		rbfmsi.close();
+		rbfm->closeFile(fileHandle);
+		return rc;
+	}
+	int currentID = -1;
+	int maxID = 1;
+	RID rid;
+	void *data = malloc(50);
+	while (rbfmsi.getNextRecord(rid, data) != RBFM_EOF) {
+			currentID = *(int *)((char *)data + 1);
+			if (currentID>maxID){
+				maxID = currentID;
+			}
+		}
+	nextID = currentID+1;
+	rbfmsi.close();
+	rbfm->closeFile(fileHandle);
+	free(data);
+	return 0;
+}
+
 void prepareAttribute4Table(vector<Attribute> &tableDescriptor) {
 	Attribute table_id, table_name, file_name;
 	table_id.name = "table-id";
@@ -36,7 +70,7 @@ void prepareAttribute4Table(vector<Attribute> &tableDescriptor) {
 	tableDescriptor.push_back(file_name);
 }
 
-void prepareAttribute4Colum(vector<Attribute> &columnDescriptor) {
+void prepareAttribute4Column(vector<Attribute> &columnDescriptor) {
 	Attribute table_id, column_name, column_type, column_length, column_position;
 
 	table_id.name = "table-id";
@@ -106,6 +140,66 @@ void prepareRecord4Columns(const int cid, const char* columnName, const int clen
 	memcpy((char *)data + start, &pos, 4);
 	start += 4;
 	free(nullPointer);
+
+}
+
+bool tableNameOccuppied(const string  & tableName){
+	RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
+	RBFM_ScanIterator rbfmsi;
+	FileHandle fileHandle;
+	rbfm -> openFile(TABLE, fileHandle);
+	vector<Attribute> tableDescriptor;
+	prepareAttribute4Table(tableDescriptor);
+	string conditionAttribute = "table-name";
+	void *value = malloc(54);
+	int nameSize = tableName.size();
+	memcpy(value,(void *)&nameSize,4);
+	memcpy((char *)value+sizeof(int), tableName.c_str(), nameSize);
+	vector<string> attributeNames;
+	attributeNames.push_back("table-id");
+
+	//TODO****//
+	RID rid;
+	void *data = malloc(100);
+	rbfm->scan(fileHandle, tableDescriptor, conditionAttribute,EQ_OP,value, attributeNames,rbfmsi);
+	while(rbfmsi.getNextRecord(rid, data)!= -1){
+		rbfmsi.close();
+		rbfm->closeFile(fileHandle);
+		free(data);
+		free(value);
+		return true;
+	}
+	rbfmsi.close();
+	rbfm->closeFile(fileHandle);
+	free(data);
+	free(value);
+	return false;
+}
+
+int callInsertRecord(const string &fileName, const vector<Attribute>& descriptor, const void *data, RID &rid) {
+	FileHandle fileHandle;
+	RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
+	RC rc1 = rbfm -> openFile(fileName, fileHandle);
+	if(rc1 < 0) {
+		return rc1;
+	}
+	RC rc2 = rbfm -> insertRecord(fileHandle, descriptor, data, rid);
+	rbfm -> closeFile(fileHandle);
+	return rc2;
+}
+
+int callDeleteRecord(const string &fileName, const vector<Attribute>& descriptor, RID &rid) {
+	FileHandle fileHandle;
+	RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
+	RC rc1 = rbfm -> openFile(fileName, fileHandle);
+	if(rc1 < 0) {
+			return rc1;
+	}
+	RC rc2 = rbfm -> deleteRecord(fileHandle, descriptor, rid);
+
+	rbfm -> closeFile(fileHandle);
+
+	return rc2;
 }
 
 RC RelationManager::createCatalog()
@@ -183,38 +277,7 @@ RC RelationManager::deleteCatalog()
     }
     return 0;
 }
-bool tableNameOccuppied(const string  & tableName){
-	RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
-	RBFM_ScanIterator rbfmsi;
-	FileHandle fileHandle;
-	rbfm -> openFile(TABLE, fileHandle);
-	vector<Attribute> tableDescriptor;
-	prepareAttribute4Table(tableDescriptor);
-	string conditionAttribute = "table-name";
-	void *value = malloc(54);
-	int nameSize = tableName.size();
-	memcpy(value,(void *)&nameSize,4);
-	memcpy((char *)value+sizeof(int), tableName.c_str(), nameSize);
-	vector<string> attributeNames;
-	attributeNames.push_back("table-id");
 
-	//TODO****//
-	RID rid;
-	void *data = malloc(100);
-	rbfm->scan(fileHandle, tableDescriptor, conditionAttribute,EQ_OP,value, attributeNames,rbfmsi);
-	while(rbfmsi.getNextRecord(rid, data)!= -1){
-		rbfmsi.close();
-		rbfm->closeFile(fileHandle);
-		free(data);
-		free(value);
-		return true;
-	}
-	rbfmsi.close();
-	rbfm->closeFile(fileHandle);
-	free(data);
-	free(value);
-	return false;
-}
 /*RC RelationManager::getNextTableId(RecordBasedFileManager *rbfm, int &nextTableId){
 	FileHandle fileHandle;
 	rbfm->openFile(TABLE,fileHandle);
@@ -223,39 +286,7 @@ bool tableNameOccuppied(const string  & tableName){
 
 	return 0;
 }*/
-RC getNextID(int &nextID) {
-	RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
-	RBFM_ScanIterator rbfmsi ;
-	FileHandle fileHandle;
-	rbfm->openFile(TABLE,fileHandle);
-	vector<Attribute> tableDescriptor;
-	prepareAttribute4Table(tableDescriptor);
 
-	vector<string> conditionAttribute;
-	conditionAttribute.push_back("table-id");
-	void *value = NULL;
-	RC rc=rbfm->scan(fileHandle,tableDescriptor,"",NO_OP,value,conditionAttribute,rbfmsi);
-	if(rc!=0){
-		rbfmsi.close();
-		rbfm->closeFile(fileHandle);
-		return rc;
-	}
-	int currentID = -1;
-	int maxID = 1;
-	RID rid;
-	void *data = malloc(50);
-	while (rbfmsi.getNextRecord(rid, data) != RBFM_EOF) {
-			currentID = *(int *)((char *)data + 1);
-			if (currentID>maxID){
-				maxID = currentID;
-			}
-		}
-	nextID = currentID+1;
-	rbfmsi.close();
-	rbfm->closeFile(fileHandle);
-	free(data);
-	return 0;
-}
 RC RelationManager::createTable(const string &tableName, const vector<Attribute> &attrs)
 {
 
@@ -270,7 +301,8 @@ RC RelationManager::createTable(const string &tableName, const vector<Attribute>
 	if(rc1 < 0) return -1;
 
 	// allocate a new ID in TABLE/COLUMN for new tableName to occupy:
-	int newID = getNextID();
+	int newID = -1;
+	getNextID(newID);
 
 	void *buffer = malloc(100);
 
@@ -521,30 +553,6 @@ RC RelationManager::addAttribute(const string &tableName, const Attribute &attr)
 
 
 
-int callInsertRecord(const string &fileName, const vector<Attribute>& descriptor, const void *data, RID &rid) {
-	FileHandle fileHandle;
-	RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
-	RC rc1 = rbfm -> openFile(fileName, fileHandle);
-	if(rc1 < 0) {
-		return rc1;
-	}
-	RC rc2 = rbfm -> insertRecord(fileHandle, descriptor, data, rid);
-	rbfm -> closeFile(fileHandle);
-	return rc2;
-}
 
-int callDeleteRecord(const string &fileName, const vector<Attribute>& descriptor, RID &rid) {
-	FileHandle fileHandle;
-	RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
-	RC rc1 = rbfm -> openFile(fileName, fileHandle);
-	if(rc1 < 0) {
-			return rc1;
-	}
-	RC rc2 = rbfm -> deleteRecord(fileHandle, descriptor, rid);
-
-	rbfm -> closeFile(fileHandle);
-
-	return rc2;
-}
 
 
