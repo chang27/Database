@@ -180,8 +180,10 @@ RC RecordBasedFileManager::readRecord(FileHandle &fileHandle, const vector<Attri
 
 
 RC RecordBasedFileManager::printRecord(const vector<Attribute> &recordDescriptor, const void *data) {
+	cout<<"success 1"<<endl;
 	int SHIFT = 8;
-	int fieldSize = recordDescriptor.size();    
+	int fieldSize = recordDescriptor.size();
+	cout<<"fieldSize is "<<fieldSize<<endl;
 	int start = (int) ceil((double) recordDescriptor.size() / SHIFT);
     	for(int i = 0; i < fieldSize; i++) {
     		bool null = *((unsigned char *)data + i/SHIFT) & (1 << (SHIFT - 1 - i%SHIFT));
@@ -211,6 +213,7 @@ RC RecordBasedFileManager::printRecord(const vector<Attribute> &recordDescriptor
     		}
     }
     cout << endl;
+    cout << "success here:" << endl;
     return 0;
 }
 
@@ -598,7 +601,7 @@ RC RBFM_ScanIterator::initializeSI( void *page,FileHandle &fileHandle,
 	this->compOp = compOp;
 	this->value = value;
 	this->attributeNames = attributeNames;
-
+	this->page = page;
 	return 0;
 }
 
@@ -673,6 +676,7 @@ bool passComp(const void *field, const CompOp compOp, const void *value, const A
 			{
 				compval.push_back(*(char *)((char *)value+4+i));
 			}
+		//cout<<"fieldval is "<<fieldval.c_str()<<"   compval is "<<compval.c_str()<<endl;
 		switch(compOp){
 		case 0://=
 			return (strcmp(fieldval.c_str(),compval.c_str())==0);
@@ -707,15 +711,20 @@ RC RecordBasedFileManager::scan(FileHandle &fileHandle,
     const void *value,                    // used in the comparison
     const vector<string> &attributeNames, // a list of projected attributes
     RBFM_ScanIterator &rbfm_ScanIterator) {
+	RC rc1 = fileHandle.alreadyOpen();
+	int a = fileHandle.getNumberOfPages();
+	//cout<<"the number of pages "<<a<<endl;
 	if(!fileHandle.alreadyOpen() || fileHandle.getNumberOfPages()== 0) {
 		return -1;
 	}
+
 	void *page = malloc(PAGE_SIZE);
 	RC rc = fileHandle.readPage(0,page);
 	if(rc==-1){
 		free(page);
 		return -1;
 	}
+
 	if(conditionAttribute == ""){
 		if (compOp != NO_OP) {
 			return -1;
@@ -814,7 +823,6 @@ RC RBFM_ScanIterator::getNextRecord(RID &rid, void *data){
 		}
 	}
 
-
 	//read the page, and scan
 	//fileHandle.readPage(currentRid.pageNum-1,page);
 	short fieldLoc = -1; //condition attribute location
@@ -822,7 +830,6 @@ RC RBFM_ScanIterator::getNextRecord(RID &rid, void *data){
 	bool isRightRecord = false;
 	bool bypassComp = false;
 	//when the conditionAttribute is empty, just assume the current record is the right one
-
 	if(conditionAttribute ==""){
 
 		fieldLoc = 1;
@@ -839,14 +846,12 @@ RC RBFM_ScanIterator::getNextRecord(RID &rid, void *data){
 			}
 		}
 	}
-
-
-
 	if(fieldLoc == -1) return RBFM_EOF;
 	    //start from the current slotNum, find the next record
 
 	int i=0;
 	for(i=currentRid.slotNum ; i<=N; i++){
+		//cout<<"the current slotNum is "<<i<<endl;
 			//find the record with the condition attribute
 			//short end = *(short *)((char *)page+PAGE_SIZE-(i+2)*2);
 			//if(end==-1){
@@ -854,6 +859,7 @@ RC RBFM_ScanIterator::getNextRecord(RID &rid, void *data){
 			//}
 			//short start = getStart(page,i);
 		short start = *(short *)((char *)page+PAGE_SIZE-2*(i+2));
+		//cout<<"the start is "<<start<<endl;
 		if(start == -1){
 				continue;
 		}
@@ -862,7 +868,6 @@ RC RBFM_ScanIterator::getNextRecord(RID &rid, void *data){
 		if(isRedirected==-1){
 				continue;
 		}
-
 			//find the specific field in the record
 		if(!bypassComp) {
 		short fieldEnd = *(short *)((char *)page+start+2*fieldLoc);
@@ -876,18 +881,19 @@ RC RBFM_ScanIterator::getNextRecord(RID &rid, void *data){
 			//check if the field satisfies compOp
 		AttrType attrType;
 		attrType = recordDescriptor[fieldLoc-1].type;
-		if( !isRightRecord){
+	//	if( !isRightRecord){
 			isRightRecord = passComp(field, compOp, value, attrType); //bypass when attribute is empty;
-		}
+//		}
 
 		free(field);
 		}
 			//if not satisfies, continue;
-		if(!isRightRecord){
+
+		if(isRightRecord==false){
 			continue;
 		} else{
 			//this is the right record, re-format the record and get the right rid and data
-			cout<<"we have found the right record!"<<endl;
+			//cout<<"we have found the right record!"<<endl;
 			currentRid.slotNum =i;
 			//cut the record according to the attributeNames
 			break;

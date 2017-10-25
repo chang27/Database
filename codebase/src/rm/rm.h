@@ -21,8 +21,13 @@ public:
   ~RM_ScanIterator() {};
 
   // "data" follows the same format as RelationManager::insertTuple()
-  RC getNextTuple(RID &rid, void *data) { return RM_EOF; };
+  RC getNextTuple(RID &rid, void *data);
   RC close() { return -1; };
+  void setRBFMSI(RBFM_ScanIterator si){
+	  rbfmsi=si;
+  }
+private:
+  RBFM_ScanIterator rbfmsi;
 };
 
 void prepareAttribute4Table(vector<Attribute> &tableDescriptor);
