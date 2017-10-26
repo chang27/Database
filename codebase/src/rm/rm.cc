@@ -17,6 +17,7 @@ RelationManager::~RelationManager()
 }
 
 int getNextID(int &nextID) {
+
 	RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
 	RBFM_ScanIterator rbfmsi ;
 	FileHandle fileHandle;
@@ -48,6 +49,7 @@ int getNextID(int &nextID) {
 	rbfm->closeFile(fileHandle);
 	free(data);
 	return 0;
+
 }
 
 void prepareAttribute4Table(vector<Attribute> &tableDescriptor) {
@@ -102,12 +104,13 @@ void prepareAttribute4Column(vector<Attribute> &columnDescriptor) {
 
 }
 
-void prepareRecord4Tables(const int tid, const char *tableName, const int tlen, const char *fileName,
-		const int flen, const int pointerSize, void *data) {
+void prepareRecord4Tables(const int tid, const char *tableName, int tlen, const char *fileName,
+		 int flen, const int pointerSize, void *data) {
 	unsigned char *nullPointer = (unsigned char *)malloc(pointerSize);
 	memset(nullPointer, 0, pointerSize);
-	memcpy((char *)data, nullPointer, pointerSize);
-	int start = pointerSize;
+	int start = 0;
+	memcpy((char *)data + start, nullPointer, pointerSize);
+	start += pointerSize;
 	memcpy((char *)data + start, &tid, 4);
 	start += 4;
 	memcpy((char *)data + start, &tlen, 4);
@@ -125,8 +128,9 @@ void prepareRecord4Tables(const int tid, const char *tableName, const int tlen, 
 void prepareRecord4Columns(const int cid, const char* columnName, const int clen, AttrType type, const int len, const int pos, const int pointerSize, void * data) {
 	unsigned char* nullPointer = (unsigned char *)malloc(pointerSize);
 	memset(nullPointer, 0, pointerSize);
-	memcpy((char *)data, nullPointer, pointerSize);
-	int start = pointerSize;
+	int start = 0;
+	memcpy((char *)data + start, nullPointer, pointerSize);
+	start += pointerSize;
 	memcpy((char *)data + start, &cid, 4);
 	start += 4;
 	memcpy((char *)data + start, &clen, 4);
@@ -216,37 +220,43 @@ RC RelationManager::createCatalog()
 	// create Tables:
 	FileHandle tableHandle;
 	rbfm -> openFile(TABLE, tableHandle); // open Table to insert table, column;
-	void *buffer = malloc(100);
+	void *buffer = malloc(1000);
 	vector<Attribute> tableDescriptor;
 	prepareAttribute4Table(tableDescriptor);
 	int pointerSize = ceil((double) tableDescriptor.size() / 8);
 
-	prepareRecord4Tables(tid, TABLE, 6, TABLE, 6, pointerSize, buffer);
+	prepareRecord4Tables(tid, TABLE, 6 , TABLE, 6, pointerSize, buffer);
+
 	RID rid1;
 	rbfm->insertRecord(tableHandle, tableDescriptor, buffer, rid1);
 	free(buffer);
 
-	buffer = malloc(100);
+
+
+	void *buffer2 = malloc(1000);
 	//int pointerSize4C = ceil((double) columnDescriptor.size() / 8);
-	prepareRecord4Tables(cid, COLUMN, 7, COLUMN, 7, pointerSize, buffer);
+	prepareRecord4Tables(cid, COLUMN, 7, COLUMN, 7, pointerSize, buffer2);
 	RID rid2;
-	rbfm -> insertRecord(tableHandle, tableDescriptor, buffer, rid2);
-	free(buffer);
+	rbfm -> insertRecord(tableHandle, tableDescriptor, buffer2, rid2);
+	free(buffer2);
 
 	rbfm -> closeFile(tableHandle);
 
+
 	// create Columns:
-	vector<Attribute> columDescriptor;
-	prepareAttribute4Column(columDescriptor);
+	vector<Attribute> columnDescriptor;
+	prepareAttribute4Column(columnDescriptor);
+
+    cout << columnDescriptor.size() << endl;
 
 	FileHandle columnHandle;
 	rbfm -> openFile(COLUMN, columnHandle);
-	vector<Attribute> columnDescriptor;
-	prepareAttribute4Column(columnDescriptor);
+
 	int nullPointerSize = ceil((double) columnDescriptor.size() / 8);
+
 	for(int i = 1; i <= tableDescriptor.size(); i++){
 		Attribute attri = tableDescriptor[i-1];
-		buffer = malloc(100);
+		void *buffer = malloc(1000);
 		prepareRecord4Columns(tid, attri.name.c_str(), attri.name.size(), attri.type, attri.length, i, nullPointerSize, buffer);
 		RID rid;
 		rbfm -> insertRecord(columnHandle, columnDescriptor, buffer, rid);
@@ -255,7 +265,7 @@ RC RelationManager::createCatalog()
 
 	for(int i = 1; i <= columnDescriptor.size(); i++) {
 		Attribute attri2 = columnDescriptor[i-1];
-		buffer = malloc(100);
+		void *buffer = malloc(1000);
 		prepareRecord4Columns(cid, attri2.name.c_str(), attri2.name.size(), attri2.type, attri2.length, i, nullPointerSize, buffer);
 		RID rid;
 		rbfm -> insertRecord(columnHandle, columnDescriptor, buffer, rid);
@@ -263,6 +273,7 @@ RC RelationManager::createCatalog()
 	}
 
 	rbfm -> closeFile(columnHandle);
+	cout << "go through 276" << endl;
 
 	return 0;
 }
@@ -304,13 +315,14 @@ RC RelationManager::createTable(const string &tableName, const vector<Attribute>
 	int newID = -1;
 	getNextID(newID);
 
-	void *buffer = malloc(100);
+
 
 	//insert into TABLE:
 	vector<Attribute> tableDescriptor;
 	prepareAttribute4Table(tableDescriptor);
 	int pointerSize = ceil((double) tableDescriptor.size() / 8);
 
+	void *buffer = malloc(1000);
 	prepareRecord4Tables(newID, tableName.c_str(), tableName.size(), tableName.c_str(), tableName.size(), pointerSize, buffer);
 	RID rid1;
 	RC rc2 = callInsertRecord(TABLE, tableDescriptor, buffer, rid1);
@@ -324,14 +336,14 @@ RC RelationManager::createTable(const string &tableName, const vector<Attribute>
 	int columnPointerSize = ceil((double) columnDescriptor.size() / 8);
 	for(int i = 1; i <= attrs.size(); i++) {
 		Attribute attribute = attrs[i-1];
-		buffer = malloc(100);
+		void *buffer = malloc(1000);
 		prepareRecord4Columns(newID, attribute.name.c_str(), attribute.name.size(), attribute.type, attribute.length, i, columnPointerSize, buffer);
 		RID rid_i;
 		RC rci = callInsertRecord(COLUMN, columnDescriptor, buffer, rid_i);
 		free(buffer);
 		if(rci < 0) return rci;
 	}
-
+    cout << "go through 346" << endl;
     return 0;
 }
 
