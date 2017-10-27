@@ -67,7 +67,6 @@ RC PagedFileManager::openFile(const string &fileName, FileHandle &fileHandle)
 
 RC PagedFileManager::closeFile(FileHandle &fileHandle)
 {
-
     fileHandle.close();
     return 0;
 }

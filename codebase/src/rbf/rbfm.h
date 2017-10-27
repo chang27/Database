@@ -63,7 +63,7 @@ The scan iterator is NOT required to be implemented for the part 1 of the projec
 //    process the data;
 //  }
 //  rbfmScanIterator.close();
-
+/************************************************************/
 class RBFM_ScanIterator {
 public:
   RBFM_ScanIterator() {
@@ -75,10 +75,11 @@ public:
   // "data" follows the same format as RecordBasedFileManager::insertRecord().
   RC getNextRecord(RID &rid, void *data);
   RC close() {
-  	  free(page);
+  	  //free(page);
   	  fileHandle.close();
   	  return 0;
     }
+
   RC initializeSI( void *page,
   		  	  FileHandle &fileHandle,
   		  	  const vector<Attribute> &recordDescriptor,
@@ -96,8 +97,72 @@ private:
   vector<string> attributeNames;
   void *page;
 };
+/************************************************************/
+/************************************************************/
+/*class RBFM_ScanIterator {
+public:
+  RBFM_ScanIterator() {};
+  ~RBFM_ScanIterator() {
+//	  free(currentPage);
+//	  free(value);
+  };
 
-
+  // Never keep the results in the memory. When getNextRecord() is called,
+  // a satisfying record needs to be fetched from the file.
+  // "data" follows the same format as RecordBasedFileManager::insertRecord().
+  RC getNextRecord(RID &rid, void *data);
+  RC close() {
+	  fileHandle.close();
+	  return 0;
+  };
+  void setCurrentPage(void *data, int size) {
+//	  currentPage = malloc(size);
+//	  memcpy(currentPage, data, size);
+	  currentPage = data;
+  }
+  void setCurrentRid(RID rid) {
+	  currentRid.pageNum = rid.pageNum;
+	  currentRid.slotNum = rid.slotNum;
+  }
+  void setProjectAttributeNames(vector<string> attrs) {
+	  projectAttributeNames = attrs;
+  }
+  void setRecordDescriptor(vector<Attribute> rcdDes) {
+	  recordDescriptor = rcdDes;
+  }
+  void setFileHandle(FileHandle &fh) {
+	  fileHandle = fh;
+  }
+  void setConditionAttribute(string attr) {
+	  conditionAttribute = attr;
+  }
+  void setCompOp(CompOp op) {
+	  compOp = op;
+  }
+  void setValue(const void *val, int size) {
+//	  value = malloc(size);
+//	  memcpy(value, val, size);
+	  value = val;
+  }
+  void setTotalPageNum(int tpn) {
+	  totalPageNum = tpn;
+  }
+  void setVarLen(int vl) {
+	  varLen = vl;
+  }
+private:
+  void *currentPage;
+  RID currentRid;
+  string conditionAttribute;
+  vector<string> projectAttributeNames;
+  vector<Attribute> recordDescriptor;
+  FileHandle fileHandle;
+  CompOp compOp;
+  const void *value;
+  int totalPageNum;
+  int varLen;
+};*/
+/************************************************************/
 class RecordBasedFileManager
 {
 public:
