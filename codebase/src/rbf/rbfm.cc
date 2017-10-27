@@ -65,14 +65,14 @@ RC RecordBasedFileManager::insertRecord(FileHandle &fileHandle, const vector<Att
   //  short freesize = PAGE_SIZE - (rid.slotNum + 2)*2 - end; //update free space of this page
   //cout<<"the free size now is"<<freesize<<endl;
 
-
     fileHandle.readPage(rid.pageNum -1, page);
-    short N = *(short *)((char *)page + PAGE_SIZE - 2);
+    short N = *(short *)((char *)page + PAGE_SIZE - 2); //append a new page
     if(rid.slotNum > (unsigned) N){
     			N = rid.slotNum;
-    			memcpy((char *)page + PAGE_SIZE - 2, &N, 2);
+
     }
 
+    memcpy((char *)page + PAGE_SIZE - 2, &N, 2);
 
    // memcpy((char *)page + PAGE_SIZE - 2, (void *)&rid.slotNum, 2); // update total number of records;
 
@@ -256,6 +256,20 @@ RC findAvailableSlot(void *page, unsigned short &slot, short &start) {
 //	}
 //	return -1;
 //}
+void writeDirectory(FileHandle fileHandle, int pageNum){
+	void *page = malloc(PAGE_SIZE);
+	RC rc = fileHandle.readPage(pageNum - 1, page);
+	short N = 0;
+	short F = 0;
+
+	memcpy((char *)page + PAGE_SIZE - 2, &N, 2);
+
+	memcpy((char *)page + PAGE_SIZE - 4, &F, 2);
+
+	fileHandle.writePage(pageNum -1, page);
+	free(page);
+}
+
 short locatePos(int size, RID &rid, FileHandle &fileHandle){
 	int curPage = fileHandle.getNumberOfPages();
 	int totalPage = fileHandle.getNumberOfPages();
@@ -265,6 +279,7 @@ short locatePos(int size, RID &rid, FileHandle &fileHandle){
 	if(curPage == 0){ //if entire file is empty
 		fileHandle.appendPage(data);
 		curPage++;
+		writeDirectory(fileHandle, curPage);
 		slot = 1;
 		start = 0;
 	}else{
@@ -293,6 +308,7 @@ short locatePos(int size, RID &rid, FileHandle &fileHandle){
 				int success = fileHandle.appendPage(data);
 				if(success < 0) return success;
 				curPage++;
+				writeDirectory(fileHandle, curPage);
 				slot = 1;
 				start = 0;
 			}
@@ -594,12 +610,14 @@ RC RBFM_ScanIterator::initializeSI( void *page,FileHandle &fileHandle,
 			  const vector<string> &attributeNames){
 
 	this->fileHandle = fileHandle;
-	this->currentRid.pageNum=0;
+	this->currentRid.pageNum=1;
 	this->currentRid.slotNum=1;
 	this->recordDescriptor = recordDescriptor;
 	this->conditionAttribute = conditionAttribute;
 	this->compOp = compOp;
-	this->value = value;
+	if(value != NULL){
+		this->value = value;
+	}
 	this->attributeNames = attributeNames;
 	this->page = page;
 	return 0;
@@ -711,10 +729,12 @@ RC RecordBasedFileManager::scan(FileHandle &fileHandle,
     const void *value,                    // used in the comparison
     const vector<string> &attributeNames, // a list of projected attributes
     RBFM_ScanIterator &rbfm_ScanIterator) {
+
 	RC rc1 = fileHandle.alreadyOpen();
+	cout << "fileHandle opened?" << rc1 << endl;
 	int a = fileHandle.getNumberOfPages();
-	//cout<<"the number of pages "<<a<<endl;
-	if(!fileHandle.alreadyOpen() || fileHandle.getNumberOfPages()== 0) {
+	cout<<"the number of pages "<< a <<endl;
+	if(!fileHandle.alreadyOpen() || a== 0) {
 		return -1;
 	}
 
@@ -730,6 +750,7 @@ RC RecordBasedFileManager::scan(FileHandle &fileHandle,
 			return -1;
 		}
 	}
+
 	return rbfm_ScanIterator.initializeSI(page,fileHandle, recordDescriptor, conditionAttribute,compOp,value,attributeNames);
 }
 
@@ -740,7 +761,7 @@ RC reformRecord(const vector<string> &attributeNames,
 		void *data){
 	//this function returns the right formated data
 	int SHIFT = 8;
-	int newpointerSize = ceil((double)attributeNames.size()/SHIFT);
+	int newpointerSize = ceil((double)attributeNames.size() / SHIFT);
 	int newFieldSize = attributeNames.size();
 	int oldFieldSize = recordDescriptor.size();
 	int nullArray[newFieldSize];
@@ -807,20 +828,20 @@ RC RBFM_ScanIterator::getNextRecord(RID &rid, void *data){
 	short N = *(short *)((char *)page+PAGE_SIZE-2);
 
 	//check the current rid is valid or not
-	if(currentRid.slotNum > N){
+	if(currentRid.slotNum > (unsigned) N){
 
-		if(currentRid.pageNum >= totalPage){
+		if(currentRid.pageNum >= (unsigned) totalPage){
 			return RBFM_EOF;
-
-		}else{
-
-			currentRid.pageNum += 1;
-			currentRid.slotNum = 1;
-			fileHandle.readPage(currentRid.pageNum - 1,page);
-
-			return getNextRecord(rid,data);
-
 		}
+
+
+		currentRid.pageNum += 1;
+		currentRid.slotNum = 1;
+		fileHandle.readPage(currentRid.pageNum - 1,page);
+
+		return getNextRecord(rid,data);
+
+
 	}
 
 	//read the page, and scan
@@ -833,7 +854,7 @@ RC RBFM_ScanIterator::getNextRecord(RID &rid, void *data){
 	if(conditionAttribute ==""){
 
 		fieldLoc = 1;
-		fieldLen = recordDescriptor[0].length;
+		fieldLen = 100;
 		isRightRecord = true;
 		bypassComp = true;
 
@@ -849,8 +870,8 @@ RC RBFM_ScanIterator::getNextRecord(RID &rid, void *data){
 	if(fieldLoc == -1) return RBFM_EOF;
 	    //start from the current slotNum, find the next record
 
-	int i=0;
-	for(i=currentRid.slotNum ; i<=N; i++){
+	int i = currentRid.slotNum;
+	for(; i<=N; i++){
 		//cout<<"the current slotNum is "<<i<<endl;
 			//find the record with the condition attribute
 			//short end = *(short *)((char *)page+PAGE_SIZE-(i+2)*2);
@@ -869,8 +890,8 @@ RC RBFM_ScanIterator::getNextRecord(RID &rid, void *data){
 				continue;
 		}
 			//find the specific field in the record
-		if(!bypassComp) {
-		short fieldEnd = *(short *)((char *)page+start+2*fieldLoc);
+		if(! bypassComp) {
+		short fieldEnd = *(short *)((char *)page + start + 2*fieldLoc);
 		short fieldStart = (fieldLoc==1) ? 0 : *(short *)((char *)page+start+2*(fieldLoc-1));
 		if(fieldEnd == fieldStart){
 			continue;
@@ -879,53 +900,59 @@ RC RBFM_ScanIterator::getNextRecord(RID &rid, void *data){
 		memcpy(field, (char *)page+start+fieldStart+2*(recordDescriptor.size()+1), fieldEnd-fieldStart);
 
 			//check if the field satisfies compOp
+
 		AttrType attrType;
 		attrType = recordDescriptor[fieldLoc-1].type;
-	//	if( !isRightRecord){
-			isRightRecord = passComp(field, compOp, value, attrType); //bypass when attribute is empty;
+//		if( !isRightRecord){
+		isRightRecord = passComp(field, compOp, value, attrType); //bypass when attribute is empty;
 //		}
 
 		free(field);
 		}
 			//if not satisfies, continue;
 
-		if(isRightRecord==false){
+		if(isRightRecord == false){
 			continue;
-		} else{
+		}
 			//this is the right record, re-format the record and get the right rid and data
 			//cout<<"we have found the right record!"<<endl;
-			currentRid.slotNum =i;
+		currentRid.slotNum =i;
 			//cut the record according to the attributeNames
-			break;
-			}
+			//re-format the Record
+			void *oldRecord = malloc(2000);
+
+			short oldStart = *(short *)((char *)page+PAGE_SIZE-2*(currentRid.slotNum+2));
+			short oldEnd = oldStart + getRecordSize(page, oldStart);
+			memcpy(oldRecord,(char *)page+oldStart,oldEnd-oldStart);
+
+		   //here need to be modified
+
+			RC rc = reformRecord(attributeNames,recordDescriptor,oldRecord, data);
+			if(rc < 0) return RBFM_EOF;
+
+			rid.pageNum = currentRid.pageNum;
+			rid.slotNum = currentRid.slotNum;
+
+			currentRid.slotNum += 1;
+			free(oldRecord);
+			return 0;
+			//break;
+
 		}
 		//when we finish the current page but don't find the record
-		if(i == N+1){
-			if(currentRid.pageNum == totalPage) return RBFM_EOF;
+		if((short) i == N+1){
+			if(currentRid.pageNum == (unsigned) totalPage) return RBFM_EOF;
 			else{
-				fileHandle.readPage(currentRid.pageNum,page);
+
 				currentRid.pageNum +=1;
 				currentRid.slotNum = 1;
+				fileHandle.readPage(currentRid.pageNum - 1,page);
 				//free(page);
 				return getNextRecord(rid, data);
 			}
 		}
+	return RBFM_EOF;
 
-	//re-format the Record
-	void *oldRecord = malloc(2000);
-
-	short oldStart = *(short *)((char *)page+PAGE_SIZE-2*(currentRid.slotNum+2));
-	short oldEnd = oldStart + getRecordSize(page, oldStart);
-	memcpy(oldRecord,(char *)page+oldStart,oldEnd-oldStart);
-
-   //here need to be modified
-
-	reformRecord(attributeNames,recordDescriptor,oldRecord, data);
-
-	rid = currentRid;
-	currentRid.slotNum += 1;
-	free(oldRecord);
-	return 0;
 }
 
 

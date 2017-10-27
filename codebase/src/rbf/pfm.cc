@@ -1,6 +1,5 @@
 #include "pfm.h"
-#include <iostream>
-using namespace std;
+
 PagedFileManager* PagedFileManager::_pf_manager = 0;
 
 PagedFileManager* PagedFileManager::instance()

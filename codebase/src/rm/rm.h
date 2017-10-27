@@ -14,6 +14,9 @@ using namespace std;
 #define TABLE "Tables"
 #define COLUMN "Columns"
 
+#define TLEN 6;
+#define CLEN 7;
+
 // RM_ScanIterator is an iterator to go through tuples
 class RM_ScanIterator {
 public:
@@ -22,10 +25,16 @@ public:
 
   // "data" follows the same format as RelationManager::insertTuple()
   RC getNextTuple(RID &rid, void *data);
-  RC close() { return -1; };
+  RC close() {
+	  rbfmsi.close();
+	  return 0;
+
+  };
+
   void setRBFMSI(RBFM_ScanIterator si){
 	  rbfmsi=si;
   }
+
 private:
   RBFM_ScanIterator rbfmsi;
 };
