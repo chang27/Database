@@ -392,7 +392,7 @@ int updateDirectory(void *page, short N, const RID &rid, short dist, short newSt
 			short newOffset = oldOffset - dist;
 
 			memcpy((char *)page + PAGE_SIZE - 2*(i+2), (void *)&newOffset, 2);
-			cout<<"the new offset for the "<<i<<"th slot is"<<newOffset<<endl;
+			//cout<<"the new offset for the "<<i<<"th slot is"<<newOffset<<endl;
 		}
 
 	return 0;
@@ -566,7 +566,6 @@ RC RecordBasedFileManager::updateRecord(FileHandle &fileHandle, const vector<Att
 
 
 // need to check if need to include null pointer
-
 RC RecordBasedFileManager::readAttribute(FileHandle &fileHandle, const vector<Attribute> &recordDescriptor, const RID &rid, const string &attributeName, void *data){
 	if(! fileHandle.alreadyOpen()) {
 		return -1;
@@ -579,26 +578,41 @@ RC RecordBasedFileManager::readAttribute(FileHandle &fileHandle, const vector<At
 	int pointerSize = ceil((double) recordDescriptor.size() / 8);
 	int fieldSize = recordDescriptor.size();
 	memcpy((char *)data, page, pointerSize);
-
 	int start = pointerSize;
-	for(int i = 0; i < fieldSize; i++){
-		Attribute attribute = recordDescriptor[i];
-		if(attribute.name != attributeName) {
-			int oldStart = start;
-			start += attribute.type == TypeVarChar ? *(int *)((char *)page + oldStart) + 4 : 4;
-		}else{
-			if(attribute.type == TypeVarChar) {
-				memcpy((char *)data + pointerSize, (char *)page + start, 4 + *(int *)((char *)page + start));
-			}else{
-				memcpy((char *)data + pointerSize, (char *)page + start, 4);
+
+	short *indicator = new short[fieldSize+1];
+	indicator[0]=0;
+
+
+	for(int i = 1; i <= fieldSize; i++){
+		Attribute attribute = recordDescriptor[i-1];
+		bool null = *((unsigned char *)page + (i - 1)/8) & (1 << (8 - 1 - (i-1)%8));
+		if(null){
+			if(attribute.name != attributeName) continue;
+			else{
+				free(page);
+				return 0;
 			}
-			break;
+
+		}else{
+			if(attribute.name != attributeName) {
+				//int oldStart = start;
+				int varCharLen = *(int *)((char *)page+start);
+				start += attribute.type == TypeVarChar ? (varCharLen+ 4) : 4;
+			}else{
+				if(attribute.type == TypeVarChar) {
+					int varLen = *(int *)((char *)page+start);
+					memcpy((char *)data + pointerSize, (char *)page + start, 4 + varLen);
+				}else{
+					memcpy((char *)data + pointerSize, (char *)page + start, 4);
+				}
+				free(page);
+				return 0;
+			}
 		}
 	}
 	free(page);
-
-
-	return 0;
+	return -1;
 }
 
 
@@ -731,9 +745,9 @@ RC RecordBasedFileManager::scan(FileHandle &fileHandle,
     RBFM_ScanIterator &rbfm_ScanIterator) {
 
 	RC rc1 = fileHandle.alreadyOpen();
-	cout << "fileHandle opened?" << rc1 << endl;
+	//cout << "fileHandle opened?" << rc1 << endl;
 	int a = fileHandle.getNumberOfPages();
-	cout<<"the number of pages "<< a <<endl;
+	//cout<<"the number of pages "<< a <<endl;
 	if(!fileHandle.alreadyOpen() || a== 0) {
 		return -1;
 	}
@@ -904,7 +918,7 @@ RC RBFM_ScanIterator::getNextRecord(RID &rid, void *data){
 		AttrType attrType;
 		attrType = recordDescriptor[fieldLoc-1].type;
 //		if( !isRightRecord){
-		isRightRecord = passComp(field, compOp, value, attrType); //bypass when attribute is empty;
+		isRightRecord = passComp(field, compOp, value, attrType); //bypass when  is empty;
 //		}
 
 		free(field);
