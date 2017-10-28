@@ -43,9 +43,9 @@ void prepareAttribute4Table(vector<Attribute> &tableDescriptor);
 void prepareAttribute4Column(vector<Attribute >&columnDescriptor);
   //RC appendTable(FileHandle &fileHandle, const int tid, int pointerSize, void* data);
 void prepareRecord4Tables(const int tid, const char *tableName, const int tlen, const char *fileName,
-  		const int flen, const int pointerSize, void *data);
+  		const int flen, const int pointerSize, void *data, const int version);
 void prepareRecord4Columns(const int cid, const char* columnName, const int clen,
-		  AttrType type, const int len, const int pos, const int pointerSize, void * data);
+		  AttrType type, const int len, const int pos, const int pointerSize, void * data, const int version);
 bool tableNameOccuppied(const string  & tableName);
   RC getNextID();
   int callInsertRecord(const string &fileName, const vector<Attribute>& descriptor, const void *data, RID &rid);
@@ -76,6 +76,7 @@ public:
 
   RC readTuple(const string &tableName, const RID &rid, void *data);
 
+ // RC RelationManager::getOldAttributes(const string &tableName, const int &oldVersion, const int &tableID, vector<Attribute> &oldAttributes);
   // Print a tuple that is passed to this utility method.
   // The format is the same as printRecord().
   RC printTuple(const vector<Attribute> &attrs, const void *data);
