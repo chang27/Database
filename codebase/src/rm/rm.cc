@@ -480,75 +480,150 @@ Attribute fromAttribute(void *data){
 	return result;
 }
 
+int getTableID(const string &tableName) {
 
-RC RelationManager::getAttributes(const string &tableName, vector<Attribute> &attrs)
-{
-	//This method gets the attributes (attrs) of a table called tableName by looking in the catalog tables
-
-	//given the tableName, scan TABLE and find the table-id
 	RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
 	RBFM_ScanIterator rbfmsi=RBFM_ScanIterator();
-	FileHandle fileHandleT;
-	rbfm->openFile(TABLE,fileHandleT);
+
+	FileHandle fileHandle;
+	rbfm->openFile(TABLE,fileHandle);
+
 	//cout<<"the TABLE has been opened"<<endl;
+
 	vector<Attribute> tableDescriptor;
 	prepareAttribute4Table(tableDescriptor);
-	string conditionAttribute1 = "table-name";
+
+	string conditionAttribute = "table-name";
+
 	void *value1 = malloc(54);
 	int nameSize = tableName.size();
-	memcpy(value1, &nameSize, 4);
-	memcpy((char *)value1+4,tableName.c_str(),nameSize);
-	vector<string> attributeNames1;
-	attributeNames1.push_back("table-id");
 
-	RC rc=rbfm->scan(fileHandleT,tableDescriptor,conditionAttribute1,EQ_OP,value1,attributeNames1,rbfmsi);
+	memcpy(value1, &nameSize, 4);
+
+	memcpy((char *)value1+4, tableName.c_str(), nameSize);
+
+	vector<string> tableID;
+	tableID.push_back("table-id");
+
+	RC rc=rbfm->scan(fileHandle,tableDescriptor,conditionAttribute,EQ_OP,value1, tableID ,rbfmsi);
+
 //	cout<<"the rc for scan is "<<rc<<endl;
-	if(rc!=0){
+	if(rc < 0){
 		free(value1);
 		rbfmsi.close();
-		rbfm->closeFile(fileHandleT);
+		rbfm->closeFile(fileHandle);
 		return rc;
 	}
 
-	RID trid;
+	RID t_rid;
 	void *tableRecord = malloc(200);
 	//delete the record in the TABLE
-	rc = rbfmsi.getNextRecord(trid,tableRecord);
+	rc = rbfmsi.getNextRecord(t_rid,tableRecord);
 	//cout<<"the rc for getNextRecord is "<<rc<<endl;
+
 	if(rc != 0){
 		free(value1);
 		free(tableRecord);
 		rbfmsi.close();
-		rbfm->closeFile(fileHandleT);
+		rbfm->closeFile(fileHandle);
 		return -1;
 	}
 
-	int tableID = *(int *)((char *)tableRecord+1);
-	cout<<"the tableID is "<<tableID<<endl;
+	int tid = *(int *)((char *)tableRecord+1);
+	//cout<<"the tableID is "<<tableID<<endl;
 	free(value1);
 	free(tableRecord);
-	rbfm->closeFile(fileHandleT);
+	rbfm->closeFile(fileHandle);
 	rbfmsi.close();
 
+	return tid;
+}
+
+//int getVersion(const string &tableName, int &tableID, FileHandle fileHandle, ) {
+//
+//	return -1;
+//
+//}
+
+RC RelationManager::getAttributes(const string &tableName, vector<Attribute> &attrs)
+{
+//	//This method gets the attributes (attrs) of a table called tableName by looking in the catalog tables
+//
+//	//given the tableName, scan TABLE and find the table-id
+//	RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
+//	RBFM_ScanIterator rbfmsi=RBFM_ScanIterator();
+//	FileHandle fileHandleT;
+//	rbfm->openFile(TABLE,fileHandleT);
+//	//cout<<"the TABLE has been opened"<<endl;
+//	vector<Attribute> tableDescriptor;
+//	prepareAttribute4Table(tableDescriptor);
+//	string conditionAttribute1 = "table-name";
+//	void *value1 = malloc(54);
+//	int nameSize = tableName.size();
+//	memcpy(value1, &nameSize, 4);
+//	memcpy((char *)value1+4,tableName.c_str(),nameSize);
+//	vector<string> attributeNames1;
+//	attributeNames1.push_back("table-id");
+//
+//	RC rc=rbfm->scan(fileHandleT,tableDescriptor,conditionAttribute1,EQ_OP,value1,attributeNames1,rbfmsi);
+////	cout<<"the rc for scan is "<<rc<<endl;
+//	if(rc!=0){
+//		free(value1);
+//		rbfmsi.close();
+//		rbfm->closeFile(fileHandleT);
+//		return rc;
+//	}
+//
+//	RID trid;
+//	void *tableRecord = malloc(200);
+//	//delete the record in the TABLE
+//	rc = rbfmsi.getNextRecord(trid,tableRecord);
+//	//cout<<"the rc for getNextRecord is "<<rc<<endl;
+//	if(rc != 0){
+//		free(value1);
+//		free(tableRecord);
+//		rbfmsi.close();
+//		rbfm->closeFile(fileHandleT);
+//		return -1;
+//	}
+
+
+	//cout<<"the tableID is "<<tableID<<endl;
+//	free(value1);
+//	free(tableRecord);
+//	rbfm->closeFile(fileHandleT);
+//	rbfmsi.close();
+	int tableID = getTableID(tableName);
+	if(tableID <= 0){
+		return -1;
+	}
 	//given the table-id, scan the COLUMN, find all the attributes and push back
+	RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
+	RBFM_ScanIterator rbfmsi=RBFM_ScanIterator();
 
 	//get the parameters ready for scan the COLUMN
 	FileHandle fileHandleC;
 	rbfm->openFile(COLUMN,fileHandleC);
+
 	vector<Attribute> columnDescriptor;
 	prepareAttribute4Column(columnDescriptor);
+
 	string conditionAttribute2 = "table-id";
+
 	void *value2 = malloc(4);
 	memcpy(value2,&tableID,4);
+
 	vector<string> attributeNames2;
+
 	//attributeNames2.push_back("table-id");
 	attributeNames2.push_back("column-name");
 	attributeNames2.push_back("column-type");
 	attributeNames2.push_back("column-length");
+	//attributeNames2.push_back("version");
 
 
-	//scan COLUMN by table-id, get the colun-name of the table
-	rc= rbfm->scan(fileHandleC,columnDescriptor,conditionAttribute2,EQ_OP,value2,attributeNames2,rbfmsi);
+	//scan COLUMN by table-id, get the column-name of the table
+	RC rc= rbfm->scan(fileHandleC,columnDescriptor,conditionAttribute2,EQ_OP,value2,attributeNames2,rbfmsi);
 	if(rc!=0){
 		free(value2);
 		rbfmsi.close();
@@ -566,7 +641,7 @@ RC RelationManager::getAttributes(const string &tableName, vector<Attribute> &at
 	while(rbfmsi.getNextRecord(crid,columnRecord) != -1){
 		attr = fromAttribute(columnRecord);
 		attrs.push_back(attr);
-		cout << "get one attribute" << cnt << endl;
+//		cout << "get one attribute" << cnt << endl;
 		cnt++;
 	}
 	free(value2);
@@ -679,22 +754,25 @@ RC RelationManager::printTuple(const vector<Attribute> &attrs, const void *data)
 
 RC RelationManager::readAttribute(const string &tableName, const RID &rid, const string &attributeName, void *data)
 {
+	cout << "go through beginning" << endl;
 	vector<Attribute> attributes;
 	RC rc1 = getAttributes(tableName, attributes);
 	if(rc1 < 0) {
 		return -1;
 	}
-
+	cout << "go through middle" << endl;
 	RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
 	FileHandle fileHandle;
+	cout << "go through middle 2" << endl;
 	RC rc2 = rbfm -> openFile(tableName, fileHandle);
 	if(rc2 < 0) {
 		rbfm -> closeFile(fileHandle);
 		return -1;
 	}
+	cout << "go through middle 3 " << endl;
 
 	RC rc3 = rbfm -> readAttribute(fileHandle, attributes, rid, attributeName, data);
-
+	cout << "go through middle 4 " << endl;
 	if(rc3 < 0){
 		rbfm -> closeFile(fileHandle);
 		return -1;
@@ -718,14 +796,14 @@ RC RelationManager::scan(const string &tableName,
 
 	vector<Attribute> recordDescriptor;
 	RC rc = getAttributes(tableName,recordDescriptor);
-	cout << "getAttributes: " << rc << endl;
+	//cout << "getAttributes: " << rc << endl;
 	if(rc < 0 ) return rc;
 
 	RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
 	FileHandle fileHandle;
 	rbfm->openFile(tableName,fileHandle);
 	rc = rbfm->scan(fileHandle,recordDescriptor,conditionAttribute,compOp,value,attributeNames,rbfmsi);
-	cout << "call rbfm scan: " << rc << endl;
+	//cout << "call rbfm scan: " << rc << endl;
 	if(rc != 0){
 		//rbfmsi.close();
 		rbfm->closeFile(fileHandle);
@@ -734,6 +812,7 @@ RC RelationManager::scan(const string &tableName,
 	rm_ScanIterator.setRBFMSI(rbfmsi);
     return 0;
 }
+
 RC RM_ScanIterator::getNextTuple(RID &rid, void *data) {
 
 	RC rc = rbfmsi.getNextRecord(rid, data);
@@ -744,15 +823,74 @@ RC RM_ScanIterator::getNextTuple(RID &rid, void *data) {
 }
 
 
+
+
+
+
+
 // Extra credit work
 RC RelationManager::dropAttribute(const string &tableName, const string &attributeName)
-{
-    return -1;
+{		//check if table exist and table is not system one:
+//		if(! tableNameOccuppied(tableName)){
+//			return -1;
+//		}
+//		if(tableName == TABLE || tableName == COLUMN) {
+//			return -1;
+//		}
+//
+//		int index = -1;
+//		vector<Attribute> attributes;
+//		RC rc = getAttributes(tableName, attributes);
+//		if(rc < 0) return -1;
+//
+//
+//		for(int i = 0; i < attributes.size(); i++) {
+//			if(attributes[i].name == attributeName){
+//				index = i;
+//				break;
+//			}
+//		}
+//
+//		if(index == -1) return -1; // attribute not found;
+//		RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
+//
+//		int curVersion = getVersion(tableName) + 1;
+//		int tableID = getTableID(tableName);
+//
+//		vector<Attribute> columnDescriptor;
+//		prepareAttribute4Column(columnDescriptor);
+//		FileHandle columnHandle;
+//		rbfm -> openFile(COLUMN, columnHandle);
+//		int nullPointerSize = ceil((double) columnDescriptor.size() / 8);
+//		void *buffer;
+//
+//		for(int i = 0; i < attributes.size(); i++) {
+//
+//			Attribute attri = attributes[i];
+//			if(i == index) continue;
+//			buffer = malloc(100);
+//			if(i < index){
+//				// here need add version number attribute!!!
+//				prepareRecord4Columns(tableID, attri.name.c_str(), attri.name.size(), attri.type, attri.length, i + 1, nullPointerSize, buffer);
+//
+//			}else if( i > index){
+//				prepareRecord4Columns(tableID, attri.name.c_str(), attri.name.size(), attri.type, attri.length, i, nullPointerSize, buffer);
+//			}
+//
+//			RID rid;
+//			rbfm -> insertRecord(columnHandle, columnDescriptor, buffer, rid);
+//			free(buffer);
+//
+//		}
+
+
+    return 0;
 }
 
 // Extra credit work
 RC RelationManager::addAttribute(const string &tableName, const Attribute &attr)
 {
+
     return -1;
 }
 
