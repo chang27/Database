@@ -96,7 +96,6 @@ private:
   const void *value;
   vector<string> attributeNames;
   void *page;
-
 };
 
 
@@ -130,7 +129,8 @@ public:
   RC insertRecord(FileHandle &fileHandle, const vector<Attribute> &recordDescriptor, const void *data, RID &rid);
 
   RC readRecord(FileHandle &fileHandle, const vector<Attribute> &recordDescriptor, const RID &rid, void *data);
-  
+  int getRecordVersion(FileHandle &fileHandle, const RID &rid);
+  RC getOriginalRecord(FileHandle &fileHandle, const RID &rid, void *buffer);
   // This method will be mainly used for debugging/testing. 
   // The format is as follows:
   // field1-name: field1-value  field2-name: field2-value ... \n
@@ -160,7 +160,7 @@ IMPORTANT, PLEASE READ: All methods below this comment (other than the construct
       RBFM_ScanIterator &rbfm_ScanIterator);
 
 public:
-
+  int version;
 protected:
   RecordBasedFileManager();
   ~RecordBasedFileManager();
