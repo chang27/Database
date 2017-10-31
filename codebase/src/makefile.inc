@@ -1,5 +1,5 @@
 ## For students: change this path to the root of your code if this doesn't work
-CODEROOT = /Users/Chang/eclipse-workspace/cs222/src/
+CODEROOT = /Users/Chang/eclipse-workspace/1021/Database/codebase/src
 
 #CC = gcc
 CC = g++

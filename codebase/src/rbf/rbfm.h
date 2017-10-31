@@ -76,7 +76,7 @@ public:
 
   RC close() {
   	  free(page);
-  	  fileHandle.close();
+  	//  fileHandle.close();
   	  return 0;
     }
   RC initializeSI( void *page,

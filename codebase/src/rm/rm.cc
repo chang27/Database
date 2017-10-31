@@ -16,18 +16,18 @@ RelationManager::~RelationManager()
 {
 }
 /********test use only**************/
-void printAttribute(vector<Attribute> tableAttribute) {
-	for (size_t i = 0; i < tableAttribute.size(); i++) {
-		cout << "Attribute " << i << ": " << tableAttribute[i].name << " type: " << tableAttribute[i].type << " length: "<< tableAttribute[i].length << endl;
-	}
-}
+//void printAttribute(vector<Attribute> tableAttribute) {
+//	for (size_t i = 0; i < tableAttribute.size(); i++) {
+//		cout << "Attribute " << i << ": " << tableAttribute[i].name << " type: " << tableAttribute[i].type << " length: "<< tableAttribute[i].length << endl;
+//	}
+//}
 /************test ends*************/
 
 /****not changed for version***/
 int getNextID(int &nextID) {
 
 	RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
-	RBFM_ScanIterator rbfmsi ;
+	RBFM_ScanIterator rbfmsi;
 	FileHandle fileHandle;
 	rbfm->openFile(TABLE,fileHandle);
 	vector<Attribute> tableDescriptor;
@@ -169,8 +169,8 @@ void prepareRecord4Columns(const int cid, const char* columnName, const int clen
 bool tableNameOccuppied(const string  & tableName){
 	RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
 	RBFM_ScanIterator rbfmsi;
-	FileHandle fileHandle;
-	rbfm -> openFile(TABLE, fileHandle);
+	FileHandle fileHandleT;
+	rbfm -> openFile(TABLE, fileHandleT);
 	vector<Attribute> tableDescriptor;
 	prepareAttribute4Table(tableDescriptor);
 	string conditionAttribute = "table-name";
@@ -184,16 +184,16 @@ bool tableNameOccuppied(const string  & tableName){
 	//TODO****//
 	RID rid;
 	void *data = malloc(100);
-	rbfm->scan(fileHandle, tableDescriptor, conditionAttribute,EQ_OP,value, attributeNames,rbfmsi);
+	rbfm->scan(fileHandleT, tableDescriptor, conditionAttribute,EQ_OP,value, attributeNames,rbfmsi);
 	while(rbfmsi.getNextRecord(rid, data)!= -1){
 		rbfmsi.close();
-		rbfm->closeFile(fileHandle);
+		rbfm->closeFile(fileHandleT);
 		free(data);
 		free(value);
 		return true;
 	}
 	rbfmsi.close();
-	rbfm->closeFile(fileHandle);
+	rbfm->closeFile(fileHandleT);
 	free(data);
 	free(value);
 	return false;
@@ -240,7 +240,7 @@ RC RelationManager::createCatalog()
 	// create Tables:
 	FileHandle tableHandle;
 	rbfm -> openFile(TABLE, tableHandle); // open Table to insert table, column;
-	void *buffer = malloc(1000);
+	void *buffer = malloc(1+4+(4+6)+(4+6)+4);
 	vector<Attribute> tableDescriptor;
 	prepareAttribute4Table(tableDescriptor);
 	int pointerSize = ceil((double) tableDescriptor.size() / 8);
@@ -252,7 +252,7 @@ RC RelationManager::createCatalog()
 
 
 
-	void *buffer2 = malloc(1000);
+	void *buffer2 = malloc(1+4+(4+7)+(4+7)+4);
 	//int pointerSize4C = ceil((double) columnDescriptor.size() / 8);
 
 	prepareRecord4Tables(cid, COLUMN, 7, COLUMN, 7, pointerSize, buffer2,version);
@@ -276,7 +276,7 @@ RC RelationManager::createCatalog()
 
 	for(int i = 1; i <= tableDescriptor.size(); i++){
 		Attribute attri = tableDescriptor[i-1];
-		void *buffer = malloc(1000);
+		void *buffer = malloc(50);
 		prepareRecord4Columns(tid, attri.name.c_str(), attri.name.size(), attri.type, attri.length, i, nullPointerSize, buffer,version);
 		RID rid;
 		rbfm -> insertRecord(columnHandle, columnDescriptor, buffer, rid);
@@ -285,7 +285,7 @@ RC RelationManager::createCatalog()
 
 	for(int i = 1; i <= columnDescriptor.size(); i++) {
 		Attribute attri2 = columnDescriptor[i-1];
-		void *buffer = malloc(1000);
+		void *buffer = malloc(50);
 		prepareRecord4Columns(cid, attri2.name.c_str(), attri2.name.size(), attri2.type, attri2.length, i, nullPointerSize, buffer,version);
 		RID rid;
 		rbfm -> insertRecord(columnHandle, columnDescriptor, buffer, rid);
@@ -298,6 +298,7 @@ RC RelationManager::createCatalog()
 // no change
 RC RelationManager::deleteCatalog()
 {
+
     RecordBasedFileManager *rbfm = RecordBasedFileManager:: instance();
     RC rc1 = rbfm -> destroyFile(TABLE);
     RC rc2 = rbfm -> destroyFile(COLUMN);
@@ -331,8 +332,8 @@ RC RelationManager::createTable(const string &tableName, const vector<Attribute>
 	vector<Attribute> tableDescriptor;
 	prepareAttribute4Table(tableDescriptor);
 	int pointerSize = ceil((double) tableDescriptor.size() / 8);
-
-	void *buffer = malloc(1000);
+	int size = 1 + 4 + (tableName.size() + 4) + (tableName.size() + 4) + 4;
+	void *buffer = malloc(size);
 	prepareRecord4Tables(newID, tableName.c_str(), tableName.size(), tableName.c_str(), tableName.size(), pointerSize, buffer,version);
 	RID rid1;
 	RC rc2 = callInsertRecord(TABLE, tableDescriptor, buffer, rid1);
@@ -346,7 +347,8 @@ RC RelationManager::createTable(const string &tableName, const vector<Attribute>
 	int columnPointerSize = ceil((double) columnDescriptor.size() / 8);
 	for(int i = 1; i <= attrs.size(); i++) {
 		Attribute attribute = attrs[i-1];
-		void *buffer = malloc(1000);
+		int size = 1 + 4 + (4 + attribute.name.size()) + 4 + 4 + 4 + 4;
+		void *buffer = malloc(size);
 		prepareRecord4Columns(newID, attribute.name.c_str(), attribute.name.size(), attribute.type, attribute.length, i, columnPointerSize, buffer,version);
 		RID rid_i;
 		RC rci = callInsertRecord(COLUMN, columnDescriptor, buffer, rid_i);
@@ -452,10 +454,13 @@ Attribute fromAttribute(void *data, int &currentVersion){
 	int nameSize = *(int *)((char *)data+1);
 	void *attrName= malloc(nameSize);
 	memcpy(attrName,(char *)data+5,nameSize);
+
 	string attrNameS((char *)attrName,nameSize);
+
 	result.name = attrNameS;
 
 	int type = *(int *)((char *)data+5+nameSize);
+
 	if(type==0){
 		result.type = TypeInt;
 	}else if(type==1){
@@ -555,6 +560,7 @@ RC getLatestVersion(const string &tableName, const bool &update, vector<int> & r
 	void *tableRecord = malloc(200);
 	//delete the record in the TABLE
 	rc = rbfmsi.getNextRecord(trid,tableRecord);
+	cout<<"the trid for getNextRecord is "<<trid.pageNum << trid.slotNum <<endl;
 	cout<<"the rc for getNextRecord is "<<rc<<endl;
 	if(rc != 0){
 		free(value1);
@@ -571,20 +577,25 @@ RC getLatestVersion(const string &tableName, const bool &update, vector<int> & r
 	if(res[1] == 0){
 		return -1;
 	}
-	cout<<"the table id is "<<res[0]<<" the latest version is "<<endl;
+	cout<<"the table id is "<<res[0]<<" the latest version is "<< res[1] << endl;
 	if(update){
+
 		int newVersion = res[1]+1;
 		void *oldRecord = malloc(1000);//actually no more than 118
 		int pointerSize = ceil((double) tableDescriptor.size() / 8);
+		cout<<"the pointerSize is " << pointerSize << endl;
 		//rbfm->readRecord(fileHandleT,tableDescriptor,trid,oldRecord);
 		prepareRecord4Tables(res[0], tableName.c_str(), tableName.size(), tableName.c_str(),
 				 tableName.size(), pointerSize, oldRecord, newVersion);
+
 //		RC rc3= rbfm->deleteRecord(fileHandleT,tableDescriptor,trid);
 //		RID newRid;
 //		RC rc4 = callInsertRecord(TABLE, tableDescriptor, oldRecord, newRid);
 //		free(oldRecord);
 //		if(rc3==-1 || rc4==-1) return -1;
+
 		RC rc2=rbfm->updateRecord(fileHandleT,tableDescriptor,oldRecord,trid);
+		cout << "result of updateRecord" << rc2 <<  endl;
 		free(oldRecord);
 		if(rc2<0) return -1;
 	}
@@ -684,6 +695,7 @@ RC RelationManager::getAttributes(const string &tableName, vector<Attribute> &at
 	int currentVersion = 0;
 	while(rbfmsi.getNextRecord(crid,columnRecord) != -1){
 			attr = fromAttribute(columnRecord,currentVersion);
+			cout << currentVersion << endl;
 			if(currentVersion == latestVersion){
 			attrs.push_back(attr);
 			}
@@ -706,6 +718,11 @@ RC RelationManager::insertTuple(const string &tableName, const void *data, RID &
 	vector<Attribute> recordDescriptor;
 	rc = getAttributes(tableName,recordDescriptor);
 	if(rc==-1) return rc;
+	vector<int> res;
+
+	RC rc5	= getLatestVersion(tableName,false, res);
+
+	rbfm->version = res[1];
 
 	rc = rbfm->insertRecord(fileHandle,recordDescriptor,data,rid);
 	if(rc==-1){
@@ -811,10 +828,12 @@ RC RelationManager::readTuple(const string &tableName, const RID &rid, void *dat
 		return -1;
 	}
 	RC rc2 = rbfm -> openFile(tableName, fileHandle);
+
 	if(rc2 < 0) {
 		rbfm -> closeFile(fileHandle);
 		return -1;
 	}
+
 	//int tableID = 0;
 	int currentVersion = rbfm->getRecordVersion(fileHandle, rid);
 	bool update = false;
@@ -824,9 +843,12 @@ RC RelationManager::readTuple(const string &tableName, const RID &rid, void *dat
 	if(rc5<0) return -1;
 	int latestVersion = res[1];
 	int tableID = res[0];
+
 	//int latestVersion = getLatestVersion(tableName,tableID,update);
 	//int latestVersion = getLatestVersion(tableName,tableID);
-	if(currentVersion == -1) return -1;
+
+	if(currentVersion == 0) return -1;
+
 	cout<<"the current version is "<<currentVersion <<"the latest version is "<<latestVersion<<endl;
 	//this is the current version, attributes are right
 	if(currentVersion == latestVersion){
@@ -835,17 +857,23 @@ RC RelationManager::readTuple(const string &tableName, const RID &rid, void *dat
 			rbfm -> closeFile(fileHandle);
 			return -1;
 		}
-	}else{//this is an old version, we need to compare and output the latest version
+	}else
+	{
+		//this is an old version, we need to compare and output the latest version
 		vector<Attribute> currentAttributes;
 		RC rc3 = getOldAttributes(tableName, currentVersion, tableID, currentAttributes);
 		if(rc3<0) return -1;
 
 		void *buffer = malloc(PAGE_SIZE);
 		rbfm->getOriginalRecord(fileHandle,rid, buffer); //get the original record with field offset
+
 		int m = currentAttributes.size();
 		int n = latestAttributes.size();
-		int pointerSize = ceil(n/8);
+
+		int pointerSize = ceil((double)n/8);
+
 		//int oldPointerSize = ceil(m/8);
+
 		int offset = pointerSize;
 
 		int nullArray[n];
@@ -856,12 +884,14 @@ RC RelationManager::readTuple(const string &tableName, const RID &rid, void *dat
 			for(;j<m;j++){
 				// the attribute that exist should memcpy to data
 				if(currentAttributes[j].name == latestAttributes[i].name){
-					nullArray[i]=0;//update the null pointer
-					short fieldStart = *(short *)((char *)buffer+2*j);
+
+					short fieldStart = j ==0 ? 0 : *(short *)((char *)buffer+2*(j));
 					short fieldEnd = *(short *)((char *)buffer+2*(j+1));
 
 					memcpy((char *)data+offset, (char *)buffer+2*(m+1)+fieldStart, fieldEnd-fieldStart);//update the date
 					offset += fieldEnd-fieldStart;
+
+					nullArray[i]= offset == 0? 1 : 0;//update the null pointer
 					break;
 				}
 			}
@@ -1006,15 +1036,17 @@ RC RelationManager::dropAttribute(const string &tableName, const string &attribu
 		int latestVersion = res[1];
 		//int latestVersion = getLatestVersion(tableName,tableID);
 		cout<<"check out 927"<<endl;
+
 		int curVersion = latestVersion + 1;
 
 		vector<Attribute> columnDescriptor;
 		prepareAttribute4Column(columnDescriptor);
+
 		FileHandle columnHandle;
 		rbfm -> openFile(COLUMN, columnHandle);
 		int nullPointerSize = ceil((double) columnDescriptor.size() / 8);
 		void *buffer;
-
+		cout<<"check out 1029"<<endl;
 		for(int i = 0; i < attributes.size(); i++) {
 			Attribute attri = attributes[i];
 			if(i == index) continue;
@@ -1027,11 +1059,17 @@ RC RelationManager::dropAttribute(const string &tableName, const string &attribu
 			}
 
 			RID rid;
-			rbfm -> insertRecord(columnHandle, columnDescriptor, buffer, rid);
-			free(buffer);
+			RC rci = rbfm -> insertRecord(columnHandle, columnDescriptor, buffer, rid);
+			cout<<"check out 1043"<<endl;
+			if(rci < 0){
+
+				free(buffer);
+				return -1;
+			}
+
 
 		}
-
+		cout<<"check out 1052"<<endl;
     return 0;
 }
 
@@ -1040,14 +1078,18 @@ RC RelationManager::addAttribute(const string &tableName, const Attribute &attr)
 {
 
 	// check if tableName already exist in TABLE;
-	if(tableNameOccuppied(tableName)){
+	if(! tableNameOccuppied(tableName)){
 		return -1;
 	}
 	vector<Attribute> attrs;
 	getAttributes(tableName,attrs);//this is the latest attributes
 
+     cout << attrs.size() << endl;
+
 	for(int i=0;i<attrs.size();i++){
-		if(attrs[i].name == attr.name) return-1;
+		if(attrs[i].name == attr.name) {
+			return -1;
+		}
 	}
 	//int tableID;
 	bool update = true;
@@ -1068,7 +1110,7 @@ RC RelationManager::addAttribute(const string &tableName, const Attribute &attr)
 	int i=1;
 	for(; i <= attrs.size(); i++) {
 		Attribute attribute = attrs[i-1];
-		void *buffer = malloc(1000);
+		void *buffer = malloc(100);
 		prepareRecord4Columns(tableID, attribute.name.c_str(), attribute.name.size(), attribute.type, attribute.length, i, columnPointerSize, buffer,latestVersion+1);
 		RID rid_i;
 		RC rci = callInsertRecord(COLUMN, columnDescriptor, buffer, rid_i);
@@ -1076,12 +1118,14 @@ RC RelationManager::addAttribute(const string &tableName, const Attribute &attr)
 		if(rci < 0) return rci;
 		}
 
-	void *buffer = malloc(1000);
-	prepareRecord4Columns(tableID,attr.name.c_str(),attr.name.size(),attr.type,attr.length,i+1, columnPointerSize, buffer, latestVersion+1);
+	void *buffer = malloc(100);
+	prepareRecord4Columns(tableID,attr.name.c_str(),attr.name.size(),attr.type,attr.length, i , columnPointerSize, buffer, latestVersion+1);
+
 	RID rid_i;
-	RC rci = callInsertRecord(COLUMN, columnDescriptor, buffer, rid_i);
+	RC rc = callInsertRecord(COLUMN, columnDescriptor, buffer, rid_i);
+
 	free(buffer);
-	if(rci < 0) return rci;
+	if(rc < 0) return rc;
     return 0;
 }
 

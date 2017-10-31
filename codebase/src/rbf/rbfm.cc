@@ -52,9 +52,11 @@ RC RecordBasedFileManager::insertRecord(FileHandle &fileHandle, const vector<Att
     		return -1;
     }
 
-	void *header = malloc(1600); // header size is no larger than 1500 bytes.
+
 	void *page = malloc(PAGE_SIZE);
 	int fieldSize = recordDescriptor.size();
+	int sizeofheader = (fieldSize + 1)*2;
+	void *header = malloc(sizeofheader); // header size is no larger than 1500 bytes.
 	int pointerSize = ceil((double) recordDescriptor.size() / 8);
 
 	int size = formatHeader(data, header, recordDescriptor, fieldSize, pointerSize); //total size of this record
@@ -185,6 +187,7 @@ int RecordBasedFileManager::getRecordVersion(FileHandle &fileHandle, const RID &
 	}
 	// check if record exist or has been deleted:
 	short offSet = *(short *)((char *)page + PAGE_SIZE - (slotNum + 2)*2);
+
 	if(offSet == -1){
 		free(page);
 		return -1;
@@ -202,12 +205,15 @@ int RecordBasedFileManager::getRecordVersion(FileHandle &fileHandle, const RID &
 		free(page);
 		return getRecordVersion(fileHandle, newRid);
 	}else{
-		short endPos = startPos + getRecordSize(page, startPos)+4;
+		short endPos = startPos + getRecordSize(page, startPos) + 4;
 
-		void *data = malloc(endPos-startPos);
-		memcpy(data,(char *)page+startPos, endPos-startPos);
-		result = *(int *)((char *)data+endPos-startPos-4);
-		free(data);
+//		void *data = malloc(endPos-startPos);
+//
+//		memcpy(data, (char *)page+startPos, endPos-startPos);
+
+		result = *(int *)((char *)page+ endPos -4);
+
+		//free(data);
 	}
 	free(page);
 	return result;

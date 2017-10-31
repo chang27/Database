@@ -18,8 +18,6 @@ RC RM_TEST_EXTRA_1(const string &tableName, const int nameLength, const string &
     RC rc = rm->getAttributes(tableName, attrs);
     assert(rc == success && "RelationManager::getAttributes() should not fail.");
 
-    cout<<"get attributes success"<<endl;
-
     int nullAttributesIndicatorActualSize = getActualByteForNullsIndicator(attrs.size());
     unsigned char *nullsIndicator = (unsigned char *) malloc(nullAttributesIndicatorActualSize);
 	memset(nullsIndicator, 0, nullAttributesIndicatorActualSize);
@@ -27,13 +25,11 @@ RC RM_TEST_EXTRA_1(const string &tableName, const int nameLength, const string &
     prepareTuple(attrs.size(), nullsIndicator, nameLength, name, age, height, salary, tuple, &tupleSize);
     rc = rm->insertTuple(tableName, tuple, rid);
     assert(rc == success && "RelationManager::insertTuple() should not fail.");
-    cout<<"prepare tuple and insert tuple both success"<<endl;
 
     // Read Attribute
     rc = rm->readAttribute(tableName, rid, "Height", returnedData);
     assert(rc == success && "RelationManager::readAttribute() should not fail.");
 
-    cout<<"read attribute success"<<endl;
     if(memcmp((char *)returnedData+nullAttributesIndicatorActualSize, (char *)tuple+22+nullAttributesIndicatorActualSize, 4) != 0)
     {
         cout << "RelationManager::readAttribute() failed." << endl;
@@ -45,11 +41,9 @@ RC RM_TEST_EXTRA_1(const string &tableName, const int nameLength, const string &
     else
     {
         // Drop the attribute
-    	cout<<"the following is for drop attribute"<<endl;
-
         rc = rm->dropAttribute(tableName, "Height");
         assert(rc == success && "RelationManager::dropAttribute() should not fail.");
-        cout<<"the following is for drop attribute"<<endl;
+
         // Read Tuple and print the tuple
         rc = rm->readTuple(tableName, rid, returnedData);
         assert(rc == success && "RelationManager::readTuple() should not fail.");
@@ -88,7 +82,6 @@ int main()
 
     // Create a table
     rcmain = createTable("tbl_employee100");
-    cout<<"create table success"<<endl;
     rcmain = RM_TEST_EXTRA_1("tbl_employee100", 14, name1, 24, 185, 10000);
 
     return rcmain;
