@@ -51,31 +51,32 @@ RC IndexManager::closeFile(IXFileHandle &ixfileHandle)
 
     return rc;
 }
-RC buildRoot(IXFileHandle &ixfileHandle, const Attribute &attribute,const void *key, unsigned int &keyLen, const RID &rid){
+RC firstLeaf(IXFileHandle &ixfileHandle, const Attribute &attribute,const void *key, unsigned int &keyLen, const RID &rid){
 	void *root = malloc(PAGE_SIZE);
-	memset(root, -1, 4);//set ParentNum to -1
-	memset((char *)root+4, 1, 2);//total keys == -1(short)
-	memset((char *)root+6, 1, 2); //is leaf
-	memset((char *)root+8, -1, 4);//next is empty
+	memset(root, -1, 2);//set ParentNum to -1
+	memset((char *)root+2, 1, 2);//total keys == 1(short)
+	memset((char *)root+4, 1, 2); //is leaf
+	memset((char *)root+6, -1, 2);//next is empty
 
 	//set the first key entry in the root
-	keyLen = attribute.type==TypeVarChar ? *((int *) key) : 4;
-	memcpy((char *)root+12, key, keyLen);
-	memcpy((char *)root+12+keyLen, &rid.pageNum, 4);
-	memcpy((char *)root+16+keyLen, &rid.slotNum, 4);
+	keyLen = attribute.type==TypeVarChar ? *((int *) key) + 4 : 4;
 
-	short freeSpaceOffset = 20+keyLen;
+	memcpy((char *)root+8, key, keyLen);
+	memcpy((char *)root+8+keyLen, &rid.pageNum, 4);
+	memcpy((char *)root+12+keyLen, &rid.slotNum, 4);
+
+	short freeSpaceOffset = 16+keyLen;
 	memcpy((char *)root+PAGE_SIZE-2, &freeSpaceOffset, 2);
-	RC rc = ixfileHandle.fileHandle.appendPageCounter(root);
+	RC rc = ixfileHandle.fileHandle.appendPage(root);
 
 	free(root);
 	return rc;
 }
-void getDirectory(void *page, int &parentPageNum, short &totalKeys, short &isLeaf, int &rightSibling, short &freeSpaceOffset){
-	parentPageNum = *(int *)page;
-	totalKeys = *(short *)((char *)page+4);
-	isLeaf = *(short *)((char *)page+6);
-	rightSibling = *(int *)((char *)page+8);
+void getDirectory(void *page, short &parentPageNum, short &totalKeys, short &isLeaf, short &rightSibling, short &freeSpaceOffset){
+	parentPageNum = *(short *)page;
+	totalKeys = *(short *)((char *)page+2);
+	isLeaf = *(short *)((char *)page+4);
+	rightSibling = *(short *)((char *)page+6);
 	freeSpaceOffset = *(short *)((char *)page +PAGE_SIZE-2);
 }
 
@@ -121,17 +122,18 @@ int compareWithKey(void *currentPage, short &offset, const void *key, const Attr
 	return -1;
 }
 //check this again, can this be used in index-index-index-leaf all?
-RC getKeyOffsetInParent(void *parentNode, short &totalKeys, short &offset, bool &isExist, const void *key,const Attribute &attribute ){
+int getKeyOffsetInParent(void *parentNode, const short &totalKeys, bool &isExist, const void *key,const Attribute &attribute ){
 	//return the offset, which is the position of the child, in which we want to insert key
 	int res = -1;
-	int keyLen = attribute.type==TypeVarChar ? *((int *) key) : 4;
+	int keyLen = attribute.type==TypeVarChar ? *((int *) key)+4 : 4;
 	int i=0;
+	short offset = 10;
 	for(; i< totalKeys; i++){
 		res = compareWithKey(parentNode, offset, key, attribute, isExist);
 		if(res>=0){
 			break;
 		}else{
-			offset += 4+keyLen;
+			offset += 2+keyLen;
 			continue;
 		}
 	}
@@ -140,8 +142,8 @@ RC getKeyOffsetInParent(void *parentNode, short &totalKeys, short &offset, bool 
 		short freeSpaceStart = *(short *)((char *)parentNode+PAGE_SIZE-2);
 		if(freeSpaceStart != offset) return -1;
 	}
-	offset -= 4;//so now the offset is for the page number of child
-	return 0;
+	offset -= 2;//so now the offset is for the page number of child
+	return offset;
 }
 RC getKeyOffsetinLeaf(){
 
