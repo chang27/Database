@@ -739,7 +739,7 @@ RC RecordBasedFileManager::scan(FileHandle &fileHandle,
     const vector<string> &attributeNames, // a list of projected attributes
     RBFM_ScanIterator &rbfm_ScanIterator) {
 
-	RC rc1 = fileHandle.alreadyOpen();
+	//RC rc1 = fileHandle.alreadyOpen();
 	//cout << "fileHandle opened?" << rc1 << endl;
 	int a = fileHandle.getNumberOfPages();
 	//cout<<"the number of pages "<< a <<endl;
@@ -802,7 +802,7 @@ RC reformRecord(const vector<string> &attributeNames,
 				break;
 			}
 		}
-		if(j == recordDescriptor.size()) return -1;
+		if(j == (signed)recordDescriptor.size()) return -1;
 	}
 	//get the null pointer ready
 	unsigned char *nullPointer = (unsigned char *)malloc(newpointerSize);
@@ -868,7 +868,7 @@ RC RBFM_ScanIterator::getNextRecord(RID &rid, void *data){
 		bypassComp = true;
 
 	}else{ //if ca is not empty
-		for(int i=0; i<recordDescriptor.size();i++){
+		for(int i=0; i<(signed)recordDescriptor.size();i++){
 			if(recordDescriptor[i].name == conditionAttribute){
 				fieldLoc = i+1;
 				fieldLen = recordDescriptor[i].length;
