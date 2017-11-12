@@ -199,10 +199,6 @@ int getKeyOffsetInParent(void *parentNode, const short &totalKeys, const void *k
 }
 
 
-RC getKeyOffsetinLeaf(){
-
-	return 0;
-}
 RC getLeftNode(FileHandle & fileHandle, const Attribute &attribute, const void *key, stack<short> &internalStack){
 	if(! fileHandle.alreadyOpen()){
 		return -1;
@@ -225,12 +221,7 @@ RC getLeftNode(FileHandle & fileHandle, const Attribute &attribute, const void *
 		rootPage = getKeyOffsetInParent(buffer, totalKeys, key, attribute);
 		free(buffer);
 		if(rootPage == -1) return -1;
-//		int i = 0;
-//		int offset = 8 + 2;
-//		for(; i < totalKeys; i++){
-//			boolean
-//			if(compareWithKey(rootPage, offset, key, attribute))
-//		}
+
 	}
 	//find the parent and the leaf
 	return 0;
@@ -263,7 +254,7 @@ RC splitInternalNode(void* buffer, const Attribute & attribute, void *upperKey, 
 	r_pageNum = fileHandle.getNumberOfPages() - 1;
 	start -= keyLen;
 	writeDirectory(buffer, isRoot, keyNum, isLeaf, r_pageNum, start);
-	fileHandle.writePage(c_pageNum, buffer);
+	//fileHandle.writePage(c_pageNum, buffer);
 	free(newPage);
 	return 0;
 }
@@ -279,7 +270,7 @@ RC buildRoot(void *page, const Attribute& attribute, void *key, const short &lef
 	return 0;
 }
 
-RC insertInternalNode(FileHandle & fileHandle, const Attribute &attribute, short pageNum, short leftLeaf, short rightLeaf, void *key, stack<short> &parentStack) {
+RC insertInternalNode(FileHandle & fileHandle, const Attribute &attribute, short pageNum, short &leftLeaf, short &rightLeaf, void *key, stack<short> &parentStack) {
 	if(!fileHandle.alreadyOpen()){
 		return -1;
 	}
@@ -336,9 +327,10 @@ RC insertInternalNode(FileHandle & fileHandle, const Attribute &attribute, short
 	if(split) {
 		memcpy((char *)buffer + PAGE_SIZE + PAGE_SIZE - 2, &offset, 2);
 		short r_pageNum;
-		void *upperKey = malloc(52);
+		void *upperKey = malloc(54);
 		//void *newPage = malloc(PAGE_SIZE);
 		splitInternalNode(buffer, attribute, upperKey, pageNum, r_pageNum, fileHandle);
+		fileHandle.writePage(pageNum, buffer);
 		free(buffer);
 		insertInternalNode(fileHandle, attribute, parent, pageNum, r_pageNum, upperKey, parentStack);
 		free(upperKey);
@@ -418,7 +410,8 @@ RC insertDuplicate(FileHandle &fileHandle,
 		memcpy(firstOverflowPage,&duplicatePageNum, 2);
 		memcpy((char *)firstOverflowPage+2, &duplicateSlotNum, 2);
 		memcpy((char *)firstOverflowPage+4, &rid, 4);
-		memset((char *)firstOverflowPage+PAGE_SIZE-2,8,2);
+		memset((char *)firstOverflowPage+PAGE_SIZE-2,-1,2);
+		memset((char *)firstOverflowPage+PAGE_SIZE-4,8,2);
 
 		fileHandle.appendPage(firstOverflowPage);
 
@@ -439,6 +432,9 @@ RC insertToLeaf(FileHandle &fileHandle,
 		const int & pageNum,//the page number of the leaf
 		const void* key,
 		const RID &rid,
+		void *midEntry,
+		short &rightChildPageNum,
+		bool &updateParent
 		){
 	void *buffer = malloc(PAGE_SIZE);
 	RC rc = fileHandle.readPage(pageNum,buffer);
@@ -512,12 +508,14 @@ RC insertToLeaf(FileHandle &fileHandle,
 
 
 		//set up right page's directory & entries, append it
-		memcpy(rightPage, &parentNum, 2);
+
+		/*memcpy(rightPage, &parentNum, 2);
 		memcpy((char *)rightPage+2, &rightEntriesNum, 2);
 		memcpy((char *)rightPage+4, &isLeaf, 2);
-		memcpy((char *)rightPage+6, &rightSibling, 2);
+		memcpy((char *)rightPage+6, &rightSibling, 2);*/
 		short rightFreeSpaceOffset = freeSpaceOffset - midPoint + 8;
-		memcpy((char *)right+PAGE_SIZE-2,&rightFreeSpaceOffset, 2);
+		//memcpy((char *)right+PAGE_SIZE-2,&rightFreeSpaceOffset, 2);
+		writeDirectory(rightPage, parentNum, rightEntriesNum, isLeaf,  rightSibling, rightFreeSpaceOffset);
 
 		memmove((char *)rightPage + 8, (char *)tempPage+midPoint,freeSpaceOffset-midPoint);
 		RC rc2 = fileHandle.appendPage(rightPage);
@@ -526,41 +524,28 @@ RC insertToLeaf(FileHandle &fileHandle,
 		//find the entry to lift
 
 		short midEntryLen  =  attribute.type==TypeVarChar ? *(int *)((char *)rightPage + 8)+4 :4 ;
-		void *midEntry = malloc(midEntryLen);
+		midEntry = malloc(midEntryLen);
 		memcpy(midEntry, (char *)rightPage +8, midEntryLen);
 		//update left leaf page
 		totalEntries /= 2;
-		memcpy(buffer, &parentNum, 2);
-		memcpy((char *)buffer+2, &totalEntries, 2);
-		memcpy((char *)buffer+4, &isLeaf, 2);
+		//memcpy(buffer, &parentNum, 2);
+		//memcpy((char *)buffer+2, &totalEntries, 2);
+		//memcpy((char *)buffer+4, &isLeaf, 2);
 		short newRightSibling = fileHandle.getNumberOfPages()-1;
-		memcpy((char *)buffer+6, &newRightSibling, 2);
-		memcpy((char *)buffer+PAGE_SIZE-2, &midPoint, 2);
-
+		//memcpy((char *)buffer+6, &newRightSibling, 2);
+		//memcpy((char *)buffer+PAGE_SIZE-2, &midPoint, 2);
+		writeDirectory(buffer, parentNum, totalEntries, isLeaf,  newRightSibling, midPoint);
 		memcpy((char *)buffer + 8, (char *)tempPage + 8, midPoint-8);
 		RC rc3 = fileHandle.writePage(pageNum,buffer);
-
 		//push the mid entry to the parent node, update the index:
-		//short parentPageNum = getParent();//need to implement
-		//RC rc4 = insertToIndex();//need to implement
+		updateParent = true;
+		rightChildPageNum = newRightSibling;
 		free(buffer);
 		free(tempPage);
 		free(rightPage);
 		free(midEntry);
 		return rc3;
 	}
-}
-RC findMidPoint(){
-	return 0;
-}
-RC splitLeaf(){
-	return 0;
-}
-RC insertToInner(){
-	return 0;
-}
-RC splitInner(){
-	return 0;
 }
 
 
@@ -591,8 +576,10 @@ RC IndexManager::insertEntry(IXFileHandle &ixfileHandle,
 		if(rc2 < 0) return rc2;
 		short leafPage = internalStack.empty() ? 1 : internalStack.top();
 		internalStack.pop();
-		rc = insertToLeaf();
-
+		short rightChildPageNum = 0;
+		bool updateParent = false;
+		void *keyToLift;
+		rc = insertToLeaf(ixfileHandle.fileHandle,attribute,leafPage, key, rid,keyToLift,rightChildPageNum, updateParent);
 	} //else{
 	//	getParent();
 		//insertToLeaf();
