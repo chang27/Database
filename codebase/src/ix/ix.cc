@@ -124,10 +124,14 @@ int compareWithKey(const void *currentPage, const short &offset, const void *key
 	// -1:key is larger
 	// 0: key is equal
 	// 1 :key is smaller, this is the right place
+	int keyValue, currentValue;
+	float keyValue1, currentValue1;
+	int keyLen, currentLen;
+
 	switch(attribute.type){
 	case TypeInt:
-		int keyValue = *(int *)key;
-		int currentValue = *(int *)((char *)currentPage + offset);
+		keyValue = *(int *)key;
+		currentValue = *(int *)((char *)currentPage + offset);
 		if(keyValue < currentValue){
 			return 1;
 		}
@@ -139,8 +143,8 @@ int compareWithKey(const void *currentPage, const short &offset, const void *key
 		}
 
 	case TypeReal:
-		float keyValue1 = *(float *)key;
-		float currentValue1 = *(float *)((char *)currentPage + offset);
+		keyValue1 = *(float *)key;
+		currentValue1 = *(float *)((char *)currentPage + offset);
 		if(keyValue1 < currentValue1){
 			return 1;
 		}else if(keyValue1 == currentValue1){
@@ -150,10 +154,10 @@ int compareWithKey(const void *currentPage, const short &offset, const void *key
 			return -1;
 		}
 	case TypeVarChar:
-		int KeyLen = *(int *)key;
-		int currentLen = *(int *)((char *)currentPage+offset);
+		keyLen = *(int *)key;
+		currentLen = *(int *)((char *)currentPage+offset);
 		string keyValue2;
-		for (int i=0;i<KeyLen; i++) keyValue2.push_back(*(char *)((char *)key+i + 4));
+		for (int i=0;i<keyLen; i++) keyValue2.push_back(*(char *)((char *)key+i + 4));
 		string currentValue2;
 		for (int i=0; i<currentLen; i++) currentValue2.push_back(*(char *)((char *)currentPage+offset+i + 4));
 		if(strcmp(keyValue2.c_str(),currentValue2.c_str())==0){
@@ -377,7 +381,7 @@ RC insertDuplicate(FileHandle &fileHandle,
 	//there is some overflow page for this key
 		short overflowPageNum = duplicateSlotNum;
 		void *overflowPage = malloc(PAGE_SIZE);
-		RC rc1 = fileHandle.readPage(overflowPageNum, overflowPage);
+		fileHandle.readPage(overflowPageNum, overflowPage);
 		short freeSpaceStartAtOP = *(short *)((char *)overflowPage+PAGE_SIZE - 4);
 		if(freeSpaceStartAtOP + 2*2 + 4 <= PAGE_SIZE){//the first overflow page is not full
 			//insert to this page
@@ -407,7 +411,7 @@ RC insertDuplicate(FileHandle &fileHandle,
 				//the last overflow page is full, we need a new overflow page
 				void *newOverflowPage = malloc(PAGE_SIZE);
 				memcpy(newOverflowPage, &rid.pageNum, 2);
-				memcpy(newOverflowPage + 2, &rid.slotNum, 2);
+				memcpy((char *)newOverflowPage + 2, &rid.slotNum, 2);
 				memset((char *)newOverflowPage+PAGE_SIZE-2,-1,2);//next pointer
 				memset((char *)newOverflowPage+PAGE_SIZE-4, 4, 2);//free space start offset
 				RC rc1 = fileHandle.appendPage(newOverflowPage);
@@ -1023,8 +1027,7 @@ RC IndexManager::scan(IXFileHandle &ixfileHandle,
 
 }
 
-void IndexManager::printBtree(IXFileHandle &ixfileHandle, const Attribute &attribute) const {
-}
+
 
 IX_ScanIterator::IX_ScanIterator()
 {
@@ -1239,7 +1242,12 @@ RC IX_ScanIterator::getNextEntry(RID &rid, void *key)
 
 RC IX_ScanIterator::close()
 {
-    return -1;
+    low = NULL;
+    high = NULL;
+	free(overFlow);
+    free(curLeaf);
+
+	return -1;
 }
 
 
@@ -1260,9 +1268,9 @@ bool IXFileHandle::alreadyOpen(){
 RC IXFileHandle::collectCounterValues(unsigned &readPageCount, unsigned &writePageCount, unsigned &appendPageCount)
 {
     //how & where are the counters udpated?
-	ixReadPageCounter = fileHandle.readPageCounter();
-    ixWritePageCounter = fileHandle.writePageCounter();
-    ixAppendPageCounter = fileHandle.appendPageCounter();
+	ixReadPageCounter = fileHandle.readPageCounter;
+    ixWritePageCounter = fileHandle.writePageCounter;
+    ixAppendPageCounter = fileHandle.appendPageCounter;
 
     readPageCount = ixReadPageCounter;
     writePageCount = ixWritePageCounter;
