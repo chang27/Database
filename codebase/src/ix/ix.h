@@ -69,6 +69,40 @@ class IX_ScanIterator {
 
         // Terminate index scan
         RC close();
+        RC initializeSI(IXFileHandle &ixfileHandle, FileHandle &fileHandle, const Attribute &attribute, const short & curPage,
+        		const short &offSet,const bool lowI, const bool highI, const void *curLeaf, const void *low, const void *high, void *overFlow,  RID &rid){
+        			this->ixfileHandle = ixfileHandle;
+        			this->fileHandle = fileHandle;
+        			this->attribute = attribute;
+        			this->curPage = curPage;
+        			this->offSet = offSet;
+        			this->lowIncluded = lowI;
+        			this->highIncluded = highI;
+        			this->curLeaf = curLeaf;
+        			this->low = low;
+        			this->high = high;
+        			this->rid.pageNum = rid.pageNum;
+        			this->rid.slotNum = rid.slotNum;
+        			this->overFlow = overFlow;
+        			return 0;
+        }
+
+    private:
+        IXFileHandle ixfileHandle;
+        FileHandle fileHandle;
+        Attribute attribute;
+        short curPage;
+        short offSet;
+        bool lowIncluded;
+        bool highIncluded;
+        void *curLeaf;
+        void *low;
+        void *high;
+        void *overFlow;
+        short overFlowOffset;
+  //      bool inOverFlow;
+        RID rid;
+
 };
 
 
