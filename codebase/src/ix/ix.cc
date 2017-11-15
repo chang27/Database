@@ -126,8 +126,8 @@ void writeDirectory(void *page, const short & parent, const short & totalKeys, c
 }
 
 bool isEmpty(const void *buffer, const short &offset){
- 	int temp = *(int *)((char *)buffer + offset);
- 	if(temp == NULL) return true;
+ 	int *temp = (int *)((char *)buffer + offset);
+ 	if(temp == nullptr) return true;
  	return false;
  }
 
@@ -373,7 +373,7 @@ RC insertInternalNode(FileHandle & fileHandle, const Attribute & attribute, unsi
 	if(split) {
 		memcpy((char *)buffer + PAGE_SIZE + PAGE_SIZE - 2, &offset, 2);
 		unsigned int r_pageNum;
-		void *upperKey = malloc(54);
+		void *upperKey = malloc(attribute.length+4);
 		//void *newPage = malloc(PAGE_SIZE);
 		splitInternalNode(buffer, attribute, upperKey, pageNum, r_pageNum, fileHandle);
 		PageNum pageNumber = pageNum;
@@ -400,8 +400,9 @@ RC insertDuplicate(FileHandle &fileHandle,
 		void *buffer, const short &offset, const unsigned int &pageNum,
 		const void *key, const short &keyLen, const RID &rid){
 	//int duplicateEntryLen  = attribute.type==TypeVarChar ? *(int *)((char *)buffer + offset)+4 : 4; //same as keyLen
-	unsigned int duplicatePageNum = *(short *)((char *)buffer+offset+keyLen);
-	unsigned int duplicateSlotNum = *(short *)((char *)buffer+offset+keyLen+2);
+	unsigned int duplicatePageNum = *(unsigned int *)((char *)buffer+offset+keyLen);
+	unsigned int duplicateSlotNum = *(unsigned int *)((char *)buffer+offset+keyLen+RS);
+	short totalEntries = *(short *)((char *)buffer + 2);
 	if(duplicatePageNum == redirected){
 	//there is some overflow page for this key
 		unsigned int overflowPageNum = duplicateSlotNum;
@@ -416,6 +417,10 @@ RC insertDuplicate(FileHandle &fileHandle,
 			freeSpaceStartAtOP += RS*2;
 			memcpy((char *)overflowPage + PAGE_SIZE - RS -2, &freeSpaceStartAtOP, 2);
 			RC rc = fileHandle.writePage(overflowPageNum,overflowPage);
+
+			totalEntries += 1;
+			memcpy((char *)buffer+2, &totalEntries, 2);
+			fileHandle.writePage(pageNum,buffer);
 			free(buffer);
 			free(overflowPage);
 			return rc;
@@ -438,10 +443,15 @@ RC insertDuplicate(FileHandle &fileHandle,
 				memcpy(newOverflowPage, &rid.pageNum, RS);
 				memcpy((char *)newOverflowPage + RS, &rid.slotNum, RS);
 				unsigned int flag = redirected;
-				memcpy((char *)newOverflowPage+PAGE_SIZE-2,&flag, RS);//next pointer
+				memcpy((char *)newOverflowPage+PAGE_SIZE-RS,&flag, RS);//next pointer
 				short temp = 2*RS;
 				memcpy((char *)newOverflowPage+PAGE_SIZE-RS-2, &temp, 2);//free space start offset
 				RC rc1 = fileHandle.appendPage(newOverflowPage);
+
+				totalEntries += 1;
+				memcpy((char *)buffer+2, &totalEntries, 2);
+				fileHandle.writePage(pageNum,buffer);
+
 				free(buffer);
 				free(overflowPage);
 				free(newOverflowPage);
@@ -455,6 +465,9 @@ RC insertDuplicate(FileHandle &fileHandle,
 				freeSpaceStartAtOP += 2*RS;
 				memcpy((char *)overflowPage+PAGE_SIZE - RS - 2, &freeSpaceStartAtOP, 2);
 				RC rc2 = fileHandle.writePage(nextOFPNum,overflowPage);
+				totalEntries += 1;
+				memcpy((char *)buffer+2, &totalEntries, 2);
+				fileHandle.writePage(pageNum,buffer);
 				free(buffer);
 				free(overflowPage);
 				return rc2;
@@ -478,8 +491,9 @@ RC insertDuplicate(FileHandle &fileHandle,
 		unsigned int flag = redirected;
 		memcpy((char *)buffer+offset+keyLen, &flag, RS);
 		unsigned int firstOverflowPageNum = fileHandle.getNumberOfPages()-1;
-		memcpy((char *)buffer+offset+keyLen+2, &firstOverflowPageNum,RS);
-
+		memcpy((char *)buffer+offset+keyLen+RS, &firstOverflowPageNum,RS);
+		totalEntries += 1;
+		memcpy((char *)buffer+2, &totalEntries, 2);
 		RC rc3 = fileHandle.writePage(pageNum,buffer);
 		free(buffer);
 		free(firstOverflowPage);
@@ -637,7 +651,7 @@ RC IndexManager::insertEntry(IXFileHandle &ixfileHandle,
 		}
 		unsigned int rightChildPageNum = redirected;
 		bool updateParent = false;
-		void *keyToLift = malloc(54);
+		void *keyToLift = malloc(attribute.length+4);
 		rc = insertToLeaf(ixfileHandle.fileHandle,attribute,leafPage, key, rid , keyToLift, rightChildPageNum, updateParent);
 		if(updateParent && rightChildPageNum != redirected){
 			unsigned int parentPageNum = internalStack.empty() ? redirected : internalStack.top();
@@ -742,6 +756,11 @@ RC deleteEntryInLeaf(FileHandle &fileHandle, const unsigned int &leafPageNum, co
 			freeSpaceOffset -= 2*RS;
 			memcpy((char *)overflow+PAGE_SIZE-4, &freeSpaceOffset, 2);
 			rc = fileHandle.writePage(currentPageNum,overflow);
+
+			totalEntries -= 1;
+			memcpy((char *)buffer+2, &totalEntries, 2);
+			rc = fileHandle.writePage(leafPageNum,buffer);
+
 			free(overflow);
 			free(buffer);
 		}else{
@@ -858,7 +877,7 @@ void printLeaf(FileHandle &fileHandle, void *leafNode, const Attribute &attribut
 		}
 		printf("]\"");
 	}
-	printf("]}\n");
+	printf("]}");
 }
 //printInternalNode(fileHandle, attribute, 0, rootPageNum);
 void printInternalNode(FileHandle &fileHandle, const Attribute &attribute, const int &depth, const unsigned int &printPageNum){
@@ -944,6 +963,8 @@ void IndexManager::printBtree(IXFileHandle &ixfileHandle, const Attribute &attri
 	unsigned int rootPageNum = getRootPage(fileHandle);
 	//When root is leaf; this situation will be solved in printInternalNode
 
+
+
 	/*if(numOfPages == 2){
 		void *root = malloc(PAGE_SIZE);
 		fileHandle.readPage(rootPageNum,root);
@@ -1018,7 +1039,7 @@ RC IndexManager::scan(IXFileHandle &ixfileHandle,
 	unsigned int curPage = redirected;
 	if(lowKey == NULL){
 		findLeftPage(ixfileHandle.fileHandle, curPage);
-		cout << "go through 1005 " << endl;
+
 	}else{
 		stack<unsigned int> internalStack;
 		RC rc1 = getLeafNode(ixfileHandle.fileHandle, attribute, lowKey , internalStack); // find leaf;
@@ -1080,6 +1101,7 @@ bool validOffset(const void* page, const short &offset, const void *low, const v
 	}else{
 		comp2 = compareWithKey(page, offset, high, attribute);
 	}
+	cout<<"comp2"<<comp2<<endl;
 	//int comp2 = compareWithKey(page, offset, high, attribute);
 	if((comp1 == 0 && lowI) || comp1 > 0){
 		if((comp2 == 0 && highI) || comp2 == -1){
@@ -1096,7 +1118,9 @@ RC IX_ScanIterator::getNextEntry(RID &rid, void *key)
 	short parent, totalKeys, leaf, freeSpace;
 	bool doubled = false;
 	getDirectory(curLeaf, parent, totalKeys, leaf, nextPage, freeSpace, doubled);
+
 	while(offSet == -1 || offSet >= freeSpace){
+	//	cout<<"total keys"<<totalKeys<<endl;
 		if(low == NULL) {
 			offSet = 6+RS;
 		}
@@ -1153,33 +1177,29 @@ RC IX_ScanIterator::getNextEntry(RID &rid, void *key)
 //	}else
 //	{
 	//here is just for overflow page detection:
-
-
+	cout<<"off set "<<offSet<<endl;
+	cout<<"current page"<<curPage<<endl;
+	cout<<"is valid"<<validOffset(curLeaf,offSet, low, high, attribute, lowIncluded, highIncluded)<<endl;
 		if(validOffset(curLeaf,offSet, low, high, attribute, lowIncluded, highIncluded)){
 			int keyLen = attribute.type == TypeVarChar? *(int *)((char *)curLeaf + offSet) + 4 : 4;
 			memcpy(key, (char *)curLeaf + offSet, keyLen);
-			cout<<"line 1161"<<endl;
-			cout<<"flag "<<*(unsigned int *)((char *)curLeaf + offSet + keyLen)<<endl;
+
 			while(*(unsigned int *)((char *)curLeaf + offSet + keyLen) == redirected){//for this key, there is overflow page
 				if(overFlowOffset == -1){ //first time read overflow
-					cout<<"1164"<<endl;
 					unsigned int overflowPage = *(unsigned int *)((char *)curLeaf + offSet + keyLen + RS);
 					fileHandle.readPage(overflowPage, overFlow);
 					overFlowOffset = 0;
 				}
-				cout<<"1169"<<endl;
 				short freeSpaceOF = *(short *)((char *)overFlow + PAGE_SIZE - RS-2);
 				unsigned int nextOF = *(unsigned int *)((char *)overFlow + PAGE_SIZE-RS);
 
 				while(overFlowOffset >= freeSpaceOF && nextOF != redirected){
-					cout<<"1175"<<endl;
 					fileHandle.readPage(nextOF, overFlow);
 					freeSpaceOF = *(short *)((char *)overFlow + PAGE_SIZE - RS -2);
 					nextOF = *(unsigned int *)((char *)overFlow + PAGE_SIZE-RS);
 					overFlowOffset = 0;
 				}
 				if(overFlowOffset >= freeSpaceOF && nextOF == redirected){
-					cout<<"1181"<<endl;
 					offSet += (keyLen + 2*RS);
 					if(! validOffset(curLeaf,offSet, low, high, attribute, lowIncluded, highIncluded)){
 						return IX_EOF;
@@ -1198,9 +1218,15 @@ RC IX_ScanIterator::getNextEntry(RID &rid, void *key)
 
 				}
 			}
+
+
 			rid.pageNum = *(unsigned int*)((char *)curLeaf + offSet + keyLen);
 			rid.slotNum = *(unsigned int*)((char *)curLeaf + offSet + keyLen + RS);
 			offSet += (keyLen + 2*RS);
+			cout<<"page number is "<<rid.pageNum<<endl;
+			cout<<"slot number is "<<rid.slotNum<<endl;
+			cout<<"offset"<<offSet<<endl;
+			cout<<"go through 1221"<<endl;
 
 		}else{
 			return IX_EOF;
@@ -1218,7 +1244,6 @@ RC IX_ScanIterator::getNextEntry(RID &rid, void *key)
 	}
 
 	return 0;
-
 }
 
 RC IX_ScanIterator::close()
@@ -1227,7 +1252,6 @@ RC IX_ScanIterator::close()
     high = NULL;
 	free(overFlow);
     free(curLeaf);
-
 	return 0;
 }
 
