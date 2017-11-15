@@ -7,6 +7,7 @@
 #include "../rbf/rbfm.h"
 
 # define IX_EOF (-1)  // end of the index scan
+# define uisize = sizeof(unsinged int);
 
 class IX_ScanIterator;
 class IXFileHandle;
