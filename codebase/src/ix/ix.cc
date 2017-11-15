@@ -54,8 +54,9 @@ RC IndexManager::closeFile(IXFileHandle &ixfileHandle)
 }
 RC initialMD(FileHandle &fileHandle) {
 	void *buffer = malloc(PAGE_SIZE);
-	short firstPage = 1;
-	memcpy(buffer, &firstPage, sizeof(short)); //Meta data page to indicate the root pageNum using first short.
+	unsigned int firstPage = 1;
+
+	memcpy(buffer, &firstPage, RS); //Meta data page to indicate the root pageNum using first short.
 	RC rc = fileHandle.appendPage(buffer);
 	free(buffer);
 	return rc;
@@ -67,19 +68,20 @@ RC firstLeaf(IXFileHandle &ixfileHandle, const Attribute &attribute,const void *
 	void *root = malloc(PAGE_SIZE);
 	short parent = -1;
 	short total = 1;
+	unsigned int next = redirected;
 	memcpy(root, &parent, 2);//set ParentNum to -1
 	memcpy((char *)root+2, &total, 2);//total keys == 1(short)
 	memcpy((char *)root+4, &total, 2); //is leaf
-	memcpy((char *)root+6, &parent, 2);//next is empty
+	memcpy((char *)root+6, &next, RS);//next is empty
 
 	//set the first key entry in the root
 	keyLen = attribute.type==TypeVarChar ? *(int *)((char *) key) + 4 : 4;
 
-	memcpy((char *)root+8, key, keyLen);
-	memcpy((char *)root+8+keyLen, &rid.pageNum, 2);
-	memcpy((char *)root+10+keyLen, &rid.slotNum, 2);
+	memcpy((char *)root+6 + RS, key, keyLen);
+	memcpy((char *)root+6 + RS +keyLen, &rid.pageNum, RS);
+	memcpy((char *)root+6 + RS+keyLen + RS, &rid.slotNum, RS);
 
-	short freeSpaceOffset = 12 + keyLen;
+	short freeSpaceOffset = 6 + 3*RS + keyLen;
 	memcpy((char *)root+PAGE_SIZE-2, &freeSpaceOffset, 2);
 	RC rc = ixfileHandle.fileHandle.appendPage(root);
 
@@ -87,24 +89,24 @@ RC firstLeaf(IXFileHandle &ixfileHandle, const Attribute &attribute,const void *
 	return rc;
 }
 
-short getRootPage(FileHandle & fileHandle) {
+unsigned int getRootPage(FileHandle & fileHandle) {
 
 	void *buffer = malloc(PAGE_SIZE);
 	RC rc = fileHandle.readPage(0, buffer);
 	if(rc < 0) {
 		free(buffer);
-		return -1;
+		return redirected;
 	}
-	short pageNum = *(short *)buffer;
+	unsigned int pageNum = *(unsigned int *)buffer;
 	free(buffer);
 	return pageNum;
 }
 
-void getDirectory(void *page, short &parent, short &totalKeys, short &isLeaf, short &rightSibling, short &freeSpaceOffset, bool & doubled){
+void getDirectory(void *page, short &parent, short &totalKeys, short &isLeaf, unsigned int &rightSibling, short &freeSpaceOffset, bool & doubled){
 	parent = *(short *)page;
 	totalKeys = *(short *)((char *)page+2);
 	isLeaf = *(short *)((char *)page+4);
-	rightSibling = *(short *)((char *)page+6);
+	rightSibling = *(unsigned int *)((char *)page+6);
 	if(doubled){
 		freeSpaceOffset = *(short *)((char *)page + PAGE_SIZE + PAGE_SIZE-2);
 	}else{
@@ -113,12 +115,12 @@ void getDirectory(void *page, short &parent, short &totalKeys, short &isLeaf, sh
 
 }
 
-void writeDirectory(void *page, const short & parent, const short & totalKeys, const short & isLeaf, const short & rightSibling, const short &freeSpaceOffset) {
+void writeDirectory(void *page, const short & parent, const short & totalKeys, const short & isLeaf, const unsigned int & rightSibling, const short &freeSpaceOffset) {
 
 	memcpy(page, &parent, 2);
 	memcpy((char *)page + 2, &totalKeys, 2);
 	memcpy((char *)page + 4, &isLeaf, 2);
-	memcpy((char *)page + 6, &rightSibling, 2);
+	memcpy((char *)page + 6, &rightSibling, RS);
 	memcpy((char *)page + PAGE_SIZE - 2, &freeSpaceOffset, 2);
 
 }
@@ -169,7 +171,7 @@ int compareWithKey(const void *currentPage, const short &offset, const void *key
 		keyLen = *(int *)key;
 		currentLen = *(int *)((char *)currentPage+offset);
 		string keyValue2;
-		for (int i=0;i<keyLen; i++) keyValue2.push_back(*(char *)((char *)key+i + 4));
+		for (int i=0;i<keyLen; i++) keyValue2.push_back(*(char *)((char *)key + i + 4));
 		string currentValue2;
 		for (int i=0; i<currentLen; i++) currentValue2.push_back(*(char *)((char *)currentPage+offset+i + 4));
 		if(strcmp(keyValue2.c_str(),currentValue2.c_str())==0){
@@ -183,30 +185,30 @@ int compareWithKey(const void *currentPage, const short &offset, const void *key
 
 
 
-int getKeyOffsetInParent(void *parentNode, const short &totalKeys, const void *key, const Attribute &attribute ){
+unsigned int getKeyOffsetInParent(void *parentNode, const short &totalKeys, const void *key, const Attribute &attribute ){
 	//return the offset, which is the position of the child, in which we want to insert key
 	int res = -1;
-	int result = -1;
+	unsigned int result = redirected;
 	//int keyLen = attribute.type==TypeVarChar ? *((int *) key)+4 : 4;
 	int i=0;
-	short offset = 10;
+	short offset = 6 + 2*RS; // 10 + 4;
 	for(; i< totalKeys; i++){
 		res = compareWithKey(parentNode, offset, key, attribute);
-		if(res == -2) return -1;
+		if(res == -2) return redirected;
 		if(res>0){  // key should be inserted into left child, key is smaller than the parent offset:
 
-			result = *(short *)((char *)parentNode + offset - 2);
+			result = *(unsigned int *)((char *)parentNode + offset - RS);
 			break;
 
 		}else{
 
 			int len = attribute.type == TypeVarChar ? *(int *)((char *)parentNode + offset) + 4 : 4;
-			offset += (2 + len);
+			offset += (RS + len);
 			//continue;
 		}
 	}
 	if(i==totalKeys){
-		result = *(short *)((char *)parentNode + offset - 2);
+		result = *(unsigned int *)((char *)parentNode + offset - RS);
 		//we searched through all the entries and insert into right child of last key;
 
 //		short freeSpaceStart = *(short *)((char *)parentNode+PAGE_SIZE-2);
@@ -220,19 +222,20 @@ int getKeyOffsetInParent(void *parentNode, const short &totalKeys, const void *k
 }
 
 
-RC getLeafNode(FileHandle & fileHandle, const Attribute &attribute, const void *key, stack<short> &internalStack){
+RC getLeafNode(FileHandle & fileHandle, const Attribute &attribute, const void *key, stack<unsigned int> &internalStack){
 	if(!fileHandle.alreadyOpen()){
 		return -1;
 	}
-	short rootPage = getRootPage(fileHandle);
-	if(rootPage < 0) return -1;
+	unsigned int rootPage = getRootPage(fileHandle);
+	if(rootPage == redirected) return -1; //fail to read meta data page
 	void *buffer = malloc(PAGE_SIZE);
 	//RC rc = fileHandle.readPage(rootPage, buffer);
 	//short isLeaf = *(short *)((char *)buffer + 4);
 	while(true){
 		internalStack.push(rootPage);
 		//buffer = malloc(PAGE_SIZE);
-		RC rc = fileHandle.readPage(rootPage, buffer);
+		PageNum rP = rootPage;
+		RC rc = fileHandle.readPage(rP, buffer);
 
 		if(rc < 0) {
 			//internalStack.clear();
@@ -247,7 +250,7 @@ RC getLeafNode(FileHandle & fileHandle, const Attribute &attribute, const void *
 		short totalKeys = *(short *)((char *)buffer + 2);
 		rootPage = getKeyOffsetInParent(buffer, totalKeys, key, attribute);
 
-		if(rootPage == -1) {
+		if(rootPage == redirected) {
 
 			return -1;
 		}
@@ -258,30 +261,31 @@ RC getLeafNode(FileHandle & fileHandle, const Attribute &attribute, const void *
 	return 0;
 }
 
-RC splitInternalNode(void* buffer, const Attribute & attribute, void *upperKey, const short &c_pageNum, short & r_pageNum, FileHandle &fileHandle){
+RC splitInternalNode(void* buffer, const Attribute & attribute, void *upperKey, const unsigned int &c_pageNum, unsigned int & r_pageNum, FileHandle &fileHandle){
 	void * newPage = malloc(PAGE_SIZE);
-	short isRoot, totalKeys, isLeaf, nextPage, offset;
+	short isRoot, totalKeys, isLeaf, offset;
+	unsigned int nextPage;
 	bool doubled = true;
 	getDirectory(buffer, isRoot, totalKeys, isLeaf, nextPage, offset, doubled);
-	int start = 10;
+	int start = 6 + RS*2;
 	int keyLen = -1;
 	short keyNum = totalKeys/2;
 	for(int i = 0; i < keyNum; i++) {
 		keyLen = attribute.type == TypeVarChar ? *(int *)((char *)buffer + start) + 4 : 4;
-		start += (keyLen + 2);
+		start += (keyLen + RS);
 	}
 	keyLen = attribute.type == TypeVarChar ? *(int *)((char *)buffer + start) + 4 : 4;
 
 	memcpy(upperKey, (char *)buffer + start, keyLen); // this is to record the key to be transferred to upper level;
 	start += keyLen;
-	memmove((char *)newPage + 8, (char *)buffer + start, offset - start);
+	memmove((char *)newPage + 6 + RS, (char *)buffer + start, offset - start);
 	if(isRoot == -1){
 		//if this is rootPAGE, change it to a non-root page;
 		isRoot = 0;
 	}
 
 	short r_keyNum = totalKeys - keyNum - 1;
-	short r_offset = offset - start + 8;
+	short r_offset = offset - start + 6 + RS;
 	writeDirectory(newPage, isRoot, r_keyNum, isLeaf, nextPage, r_offset);
 	fileHandle.appendPage(newPage);
 	r_pageNum = fileHandle.getNumberOfPages() - 1;
@@ -292,51 +296,57 @@ RC splitInternalNode(void* buffer, const Attribute & attribute, void *upperKey, 
 	return 0;
 }
 
-RC buildRoot(void *page, const Attribute& attribute, void *key, short &leftLeaf, short &rightLeaf){
-	short isRoot = -1, nextPage = -1, totalKeys = 1, isLeaf = 0;
+RC buildRoot(void *page, const Attribute& attribute, void *key, unsigned int &leftLeaf, unsigned int &rightLeaf){
+	short isRoot = -1,  totalKeys = 1, isLeaf = 0;
+	unsigned int nextPage = redirected;
 	int keyLen =  attribute.type == TypeVarChar ? *(int *)((char *)key) + 4 : 4;
-	short offset = 8 + keyLen + 4;
+	short offset = 6 +RS +RS + keyLen + RS;
 	writeDirectory(page, isRoot, totalKeys, isLeaf, nextPage, offset);
-	memcpy((char *)page + 8, &leftLeaf, 2);
-	memcpy((char *)page + 10, key, keyLen);
-	memcpy((char *)page + 10 + keyLen, &rightLeaf, 2);
+	memcpy((char *)page + 6 +RS , &leftLeaf, RS);
+	memcpy((char *)page + 6 + RS +RS, key, keyLen);
+	memcpy((char *)page + 6 +RS +RS + keyLen, &rightLeaf, RS);
 	return 0;
 }
 
-RC insertInternalNode(FileHandle & fileHandle, const Attribute & attribute, short & pageNum, short &leftLeaf, short &rightLeaf, void *key, stack<short> &parentStack) {
+RC insertInternalNode(FileHandle & fileHandle, const Attribute & attribute, unsigned int & pageNum, unsigned int &leftLeaf,
+		unsigned int &rightLeaf, void *key, stack<unsigned int> &parentStack) {
+
 	if(!fileHandle.alreadyOpen()){
 		return -1;
 	}
-	if(pageNum == -1){
+
+	if(pageNum == redirected){
 		void *page = malloc(PAGE_SIZE);
 		buildRoot(page, attribute,key, leftLeaf, rightLeaf);
 		fileHandle.appendPage(page);
 		free(page);
-		short newRoot = fileHandle.getNumberOfPages() - 1;
+		unsigned int newRoot = fileHandle.getNumberOfPages() - 1;
 		void *md = malloc(PAGE_SIZE);
-		memcpy(md, &newRoot, 2);
+		memcpy(md, &newRoot, RS);
 		RC rc = fileHandle.writePage(0, md);
 		free(md);
 		return rc;
 	}
 	void *buffer = malloc(PAGE_SIZE + PAGE_SIZE);
 	//short l_pageNum = pageNum;
-	fileHandle.readPage(pageNum, buffer);
-	short isRoot, totalKeys, isLeaf, nextPage, offset;
+	PageNum pageNumber = pageNum;
+	fileHandle.readPage(pageNumber, buffer);
+	short isRoot, totalKeys, isLeaf, offset;
+	unsigned int nextPage;
 	bool doubled = false;
 	getDirectory(buffer, isRoot, totalKeys, isLeaf, nextPage, offset, doubled);
 	/***********need check *******/
-	short parent = -1; // if this page is root;
+	unsigned int parent = redirected; // if this page is root;
 	if(! parentStack.empty()){
 		parent = parentStack.top();
 		parentStack.pop();
 	}
 	bool split = false;
 	int recordLen = attribute.type == TypeVarChar ? *(int *)((char *)key) + 4 : 4;
-	if(offset + recordLen + 2 + 2 > PAGE_SIZE) {
+	if(offset + recordLen + RS + 2 > PAGE_SIZE) {
 		split = true;
 	}
-	int start = 10;
+	int start = 6 + 2*RS;
 	int i = 0;
 	int res = -1;
 	for(; i< totalKeys; i++){
@@ -348,25 +358,26 @@ RC insertInternalNode(FileHandle & fileHandle, const Attribute & attribute, shor
 			break;
 		}else{
 				int len = attribute.type == TypeVarChar ? *(int *)((char *)buffer + start) + 4 : 4;
-				start += (2 + len);
+				start += (RS + len);
 				//continue;
 		}
 	}
 
-	memmove((char *)buffer + start + recordLen + 2, (char *)buffer + start, offset - start);
+	memmove((char *)buffer + start + recordLen + RS, (char *)buffer + start, offset - start);
 	memcpy((char *)buffer + start, key, recordLen);
-	memcpy((char *)buffer + start + recordLen, &rightLeaf, 2);
+	memcpy((char *)buffer + start + recordLen, &rightLeaf, RS);
 	totalKeys++;
-	offset += (2 + recordLen);
+	offset += (RS + recordLen);
 	memcpy((char *)buffer + 2, &totalKeys, 2); //update totalKeys;
 
 	if(split) {
 		memcpy((char *)buffer + PAGE_SIZE + PAGE_SIZE - 2, &offset, 2);
-		short r_pageNum;
+		unsigned int r_pageNum;
 		void *upperKey = malloc(54);
 		//void *newPage = malloc(PAGE_SIZE);
 		splitInternalNode(buffer, attribute, upperKey, pageNum, r_pageNum, fileHandle);
-		fileHandle.writePage(pageNum, buffer);
+		PageNum pageNumber = pageNum;
+		fileHandle.writePage(pageNumber, buffer);
 		free(buffer);
 		//insertInternalNode(fileHandle, attribute, parent, pageNum, r_pageNum, upperKey, parentStack);
 
@@ -375,7 +386,8 @@ RC insertInternalNode(FileHandle & fileHandle, const Attribute & attribute, shor
 	}
 	else{
 		memcpy((char *)buffer + PAGE_SIZE - 2, &offset, 2);
-		fileHandle.writePage(pageNum, buffer);
+		PageNum pageNumber = pageNum;
+		fileHandle.writePage(pageNumber, buffer);
 		free(buffer);
 	}
 
@@ -385,50 +397,50 @@ RC insertInternalNode(FileHandle & fileHandle, const Attribute & attribute, shor
 
 RC insertDuplicate(FileHandle &fileHandle,
 		const Attribute &attribute,
-		void *buffer, const short &offset, const short &pageNum,
+		void *buffer, const short &offset, const unsigned int &pageNum,
 		const void *key, const short &keyLen, const RID &rid){
 	//int duplicateEntryLen  = attribute.type==TypeVarChar ? *(int *)((char *)buffer + offset)+4 : 4; //same as keyLen
-	short duplicatePageNum = *(short *)((char *)buffer+offset+keyLen);
-	short duplicateSlotNum = *(short *)((char *)buffer+offset+keyLen+2);
-	if(duplicatePageNum == -1){
+	unsigned int duplicatePageNum = *(short *)((char *)buffer+offset+keyLen);
+	unsigned int duplicateSlotNum = *(short *)((char *)buffer+offset+keyLen+2);
+	if(duplicatePageNum == redirected){
 	//there is some overflow page for this key
-		short overflowPageNum = duplicateSlotNum;
+		unsigned int overflowPageNum = duplicateSlotNum;
 		void *overflowPage = malloc(PAGE_SIZE);
 		fileHandle.readPage(overflowPageNum, overflowPage);
-		short freeSpaceStartAtOP = *(short *)((char *)overflowPage+PAGE_SIZE - 4);
-		if(freeSpaceStartAtOP + 2*2 + 4 <= PAGE_SIZE){//the first overflow page is not full
+		short freeSpaceStartAtOP = *(short *)((char *)overflowPage+PAGE_SIZE - 2- RS);
+		if(freeSpaceStartAtOP + 2*RS + RS + 2 <= PAGE_SIZE){//the first overflow page is not full
 			//insert to this page
-			memcpy((char *)overflowPage + freeSpaceStartAtOP, &rid.pageNum , 2);
-			memcpy((char *)overflowPage + freeSpaceStartAtOP + 2, &rid.slotNum , 2);
+			memcpy((char *)overflowPage + freeSpaceStartAtOP, &rid.pageNum , RS);
+			memcpy((char *)overflowPage + freeSpaceStartAtOP + RS, &rid.slotNum , RS);
 			//nothing for the leaf page to be changed, but to update the directory of overflow page
-			freeSpaceStartAtOP += 4;
-			memcpy((char *)overflowPage + PAGE_SIZE - 4, &freeSpaceStartAtOP, 2);
+			freeSpaceStartAtOP += RS*2;
+			memcpy((char *)overflowPage + PAGE_SIZE - RS -2, &freeSpaceStartAtOP, 2);
 			RC rc = fileHandle.writePage(overflowPageNum,overflowPage);
 			free(buffer);
 			free(overflowPage);
 			return rc;
 		}else{//the first overflow page is full
-			short nextOFPNum = *(short *)((char *)overflowPage +PAGE_SIZE-2);
-			while(nextOFPNum != -1){
+			unsigned int nextOFPNum = *(unsigned int *)((char *)overflowPage +PAGE_SIZE-RS);
+			while(nextOFPNum != redirected){
 			//read next overflow page and check for insertion
 				fileHandle.readPage(nextOFPNum, overflowPage);
-				freeSpaceStartAtOP = *(short *)((char *)overflowPage + PAGE_SIZE - 4);
-				if(freeSpaceStartAtOP + 2*2 + 4 <= PAGE_SIZE){
+				freeSpaceStartAtOP = *(short *)((char *)overflowPage + PAGE_SIZE - RS -2);
+				if(freeSpaceStartAtOP + 2*RS + RS + 2 <= PAGE_SIZE){
 					break;
 				}
-				nextOFPNum = *(short *)((char *)overflowPage +PAGE_SIZE-2);
+				nextOFPNum = *(unsigned int *)((char *)overflowPage +PAGE_SIZE-RS);
 			}
 
 
-			if(nextOFPNum == -1){
+			if(nextOFPNum == redirected){
 				//the last overflow page is full, we need a new overflow page
 				void *newOverflowPage = malloc(PAGE_SIZE);
-				memcpy(newOverflowPage, &rid.pageNum, 2);
-				memcpy((char *)newOverflowPage + 2, &rid.slotNum, 2);
-				short flag = -1;
-				memcpy((char *)newOverflowPage+PAGE_SIZE-2,&flag,2);//next pointer
-				flag = 4;
-				memcpy((char *)newOverflowPage+PAGE_SIZE-4, &flag, 2);//free space start offset
+				memcpy(newOverflowPage, &rid.pageNum, RS);
+				memcpy((char *)newOverflowPage + RS, &rid.slotNum, RS);
+				unsigned int flag = redirected;
+				memcpy((char *)newOverflowPage+PAGE_SIZE-2,&flag, RS);//next pointer
+				short temp = 2*RS;
+				memcpy((char *)newOverflowPage+PAGE_SIZE-RS-2, &temp, 2);//free space start offset
 				RC rc1 = fileHandle.appendPage(newOverflowPage);
 				free(buffer);
 				free(overflowPage);
@@ -437,11 +449,11 @@ RC insertDuplicate(FileHandle &fileHandle,
 
 			} else{
 				//the current overflow page is not full, we can insert to it
-				memcpy((char *)overflowPage+freeSpaceStartAtOP, &rid.pageNum, 2);
-				memcpy((char *)overflowPage+freeSpaceStartAtOP + 2, &rid.slotNum, 2);
+				memcpy((char *)overflowPage+freeSpaceStartAtOP, &rid.pageNum, RS);
+				memcpy((char *)overflowPage+freeSpaceStartAtOP + RS, &rid.slotNum, RS);
 
-				freeSpaceStartAtOP += 4;
-				memcpy((char *)overflowPage+PAGE_SIZE - 4, &freeSpaceStartAtOP, 2);
+				freeSpaceStartAtOP += 2*RS;
+				memcpy((char *)overflowPage+PAGE_SIZE - RS - 2, &freeSpaceStartAtOP, 2);
 				RC rc2 = fileHandle.writePage(nextOFPNum,overflowPage);
 				free(buffer);
 				free(overflowPage);
@@ -451,22 +463,22 @@ RC insertDuplicate(FileHandle &fileHandle,
 	}else{
 		//there is no overflow page, we need create one
 		void *firstOverflowPage = malloc(PAGE_SIZE);
-		memcpy(firstOverflowPage,&duplicatePageNum, 2);
-		memcpy((char *)firstOverflowPage+2, &duplicateSlotNum, 2);
-		memcpy((char *)firstOverflowPage+4, &rid.pageNum, 2);
-		memcpy((char *)firstOverflowPage + 6, &rid.slotNum, 2);
-		short flag1 = -1;
-		memcpy((char *)firstOverflowPage+PAGE_SIZE-2, &flag1,2);
-		flag1 = 8;
-		memcpy((char *)firstOverflowPage+PAGE_SIZE-4, &flag1,2);
+		memcpy(firstOverflowPage,&duplicatePageNum, RS);
+		memcpy((char *)firstOverflowPage + RS, &duplicateSlotNum, RS);
+		memcpy((char *)firstOverflowPage + RS*2, &rid.pageNum, RS);
+		memcpy((char *)firstOverflowPage + RS*3, &rid.slotNum, RS);
+		unsigned int flag1 = redirected;
+		memcpy((char *)firstOverflowPage+PAGE_SIZE-RS, &flag1, RS);
+		short flag2 = RS*4;
+		memcpy((char *)firstOverflowPage+PAGE_SIZE-RS -2, &flag2,2);
 
 		fileHandle.appendPage(firstOverflowPage);
 
 				//update the slot in leaf
-		short flag = -1;
-		memcpy((char *)buffer+offset+keyLen, &flag, 2);
-		short firstOverflowPageNum = fileHandle.getNumberOfPages()-1;
-		memcpy((char *)buffer+offset+keyLen+2, &firstOverflowPageNum,2);
+		unsigned int flag = redirected;
+		memcpy((char *)buffer+offset+keyLen, &flag, RS);
+		unsigned int firstOverflowPageNum = fileHandle.getNumberOfPages()-1;
+		memcpy((char *)buffer+offset+keyLen+2, &firstOverflowPageNum,RS);
 
 		RC rc3 = fileHandle.writePage(pageNum,buffer);
 		free(buffer);
@@ -477,24 +489,24 @@ RC insertDuplicate(FileHandle &fileHandle,
 //one thing is missing :parent stack!
 RC insertToLeaf(FileHandle &fileHandle,
 		const Attribute &attribute,
-		const int & pageNum,//the page number of the leaf
+		const unsigned int & pageNum,//the page number of the leaf
 		const void* key,
 		const RID &rid,
 		void *midEntry,
-		short &rightChildPageNum,
-		bool &updateParent
-		){
+		unsigned int &rightChildPageNum,
+		bool &updateParent){
 	void *buffer = malloc(PAGE_SIZE);
 	RC rc = fileHandle.readPage(pageNum,buffer);
 	if(rc<0) {
 		free(buffer);
 		return -1;
 	}
-	short parentNum, totalEntries, isLeaf, rightSibling,freeSpaceOffset;
+	unsigned int rightSibling = redirected;
+	short parentNum, totalEntries, isLeaf, freeSpaceOffset;
 	bool doubled = false;
 	getDirectory(buffer,parentNum, totalEntries, isLeaf, rightSibling, freeSpaceOffset, doubled);
 	int keyLen = attribute.type==TypeVarChar ?  *(int *)((char *)key) + 4 : 4;
-	short offset = 8;
+	short offset = 6 + RS;
 	bool isExist = false;
 	//find the offset, which is the right place to insert the key
 	for (int i=0; i<totalEntries; i++){
@@ -503,7 +515,7 @@ RC insertToLeaf(FileHandle &fileHandle,
 			if(res==0) isExist=true;
 			break;
 		}else {
-			int len = attribute.type==TypeVarChar ? *(int *)((char *)buffer + offset) + 4 + 4 : 4 + 4;
+			int len = attribute.type==TypeVarChar ? *(int *)((char *)buffer + offset) + 4 + RS*2 : 4 + RS*2;
 			offset += len;
 
 		}
@@ -513,16 +525,16 @@ RC insertToLeaf(FileHandle &fileHandle,
 		RC rc5 = insertDuplicate(fileHandle, attribute, buffer, offset,pageNum, key, keyLen, rid);
 		return rc5;
 	}
-	if(freeSpaceOffset + keyLen + 2*2 +2 <= PAGE_SIZE){ //the leaf is not full, insert directly
+	if(freeSpaceOffset + keyLen + 2*RS +2 <= PAGE_SIZE){ //the leaf is not full, insert directly
 			//normal insertion
-			memmove((char *)buffer + offset + keyLen + 4, (char *)buffer + offset, freeSpaceOffset - offset);
+			memmove((char *)buffer + offset + keyLen + RS*2, (char *)buffer + offset, freeSpaceOffset - offset);
 			memcpy((char *)buffer + offset, key, keyLen);
-			memcpy((char *)buffer+offset+keyLen, &rid.pageNum, 2);
-			memcpy((char *)buffer+offset+keyLen+2, &rid.slotNum, 2);
+			memcpy((char *)buffer+offset+keyLen, &rid.pageNum, RS);
+			memcpy((char *)buffer+offset+keyLen+RS, &rid.slotNum, RS);
 
 			totalEntries += 1;
 			memcpy((char *)buffer+2, &totalEntries, 2);
-			freeSpaceOffset += (keyLen+4);
+			freeSpaceOffset += (keyLen+RS*2);
 			memcpy((char *)buffer+PAGE_SIZE-2, &freeSpaceOffset, 2);
 
 			RC rc1 = fileHandle.writePage(pageNum,buffer);
@@ -536,40 +548,35 @@ RC insertToLeaf(FileHandle &fileHandle,
 		memcpy((char *)tempPage + 2*PAGE_SIZE -2, &freeSpaceOffset, 2);
 		memmove(tempPage, buffer, freeSpaceOffset);
 
-		memmove((char *)tempPage+offset+keyLen+4, (char *)tempPage+offset, freeSpaceOffset-offset);
+		memmove((char *)tempPage+offset+keyLen+RS*2, (char *)tempPage+offset, freeSpaceOffset-offset);
 
 		memcpy((char *)tempPage+offset, key, keyLen);
 
-		memcpy((char *)tempPage+offset+keyLen, &rid.pageNum, 2);
+		memcpy((char *)tempPage+offset+keyLen, &rid.pageNum, RS);
 
-		memcpy((char *)tempPage+offset+keyLen+2, &rid.slotNum, 2);
+		memcpy((char *)tempPage+offset+keyLen+RS, &rid.slotNum, RS);
 
-		freeSpaceOffset += keyLen+4;
+		freeSpaceOffset += keyLen+RS*2;
 
 		totalEntries += 1;
-		short midPoint = 8;
+		short midPoint = 6+RS;
 		short entryLen = 4;
 
 		for (int i=0; i<totalEntries/2; i++){
 			if(attribute.type == TypeVarChar){
 				entryLen = *(int *)((char *)tempPage +midPoint)+ 4;
 			}
-			midPoint += entryLen + 4;
+			midPoint += entryLen + RS*2;
 		}
 		short rightEntriesNum = totalEntries - (totalEntries/2);
 
 
 		//set up right page's directory & entries, append it
 
-		/*memcpy(rightPage, &parentNum, 2);
-		memcpy((char *)rightPage+2, &rightEntriesNum, 2);
-		memcpy((char *)rightPage+4, &isLeaf, 2);
-		memcpy((char *)rightPage+6, &rightSibling, 2);*/
-		short rightFreeSpaceOffset = freeSpaceOffset - midPoint + 8;
-		//memcpy((char *)right+PAGE_SIZE-2,&rightFreeSpaceOffset, 2);
+		short rightFreeSpaceOffset = freeSpaceOffset - midPoint + 6 + RS;
 		writeDirectory(rightPage, parentNum, rightEntriesNum, isLeaf,  rightSibling, rightFreeSpaceOffset);
 
-		memmove((char *)rightPage + 8, (char *)tempPage+midPoint,freeSpaceOffset-midPoint);
+		memmove((char *)rightPage + 6 + RS, (char *)tempPage+midPoint,freeSpaceOffset-midPoint);
 		RC rc2 = fileHandle.appendPage(rightPage);
 
 		if(rc2<0) {
@@ -578,20 +585,15 @@ RC insertToLeaf(FileHandle &fileHandle,
 		}
 		//find the entry to lift
 
-		short midEntryLen  =  attribute.type==TypeVarChar ? *(int *)((char *)rightPage + 8)+4 :4 ;
+		short midEntryLen  =  attribute.type==TypeVarChar ? *(int *)((char *)rightPage + 6 + RS)+4 :4 ;
 		//midEntry = malloc(midEntryLen);
 
-		memcpy(midEntry, (char *)rightPage + 8, midEntryLen);
+		memcpy(midEntry, (char *)rightPage + 6 + RS, midEntryLen);
 		//update left leaf page
 		totalEntries /= 2;
-		//memcpy(buffer, &parentNum, 2);
-		//memcpy((char *)buffer+2, &totalEntries, 2);
-		//memcpy((char *)buffer+4, &isLeaf, 2);
-		short newRightSibling = fileHandle.getNumberOfPages()-1;
-		//memcpy((char *)buffer+6, &newRightSibling, 2);
-		//memcpy((char *)buffer+PAGE_SIZE-2, &midPoint, 2);
+		unsigned int newRightSibling = fileHandle.getNumberOfPages()-1;
 		writeDirectory(buffer, parentNum, totalEntries, isLeaf,  newRightSibling, midPoint);
-		memcpy((char *)buffer + 8, (char *)tempPage + 8, midPoint-8);
+		memcpy((char *)buffer + 6+RS, (char *)tempPage + 6+RS, midPoint-6-RS);
 		RC rc3 = fileHandle.writePage(pageNum,buffer);
 		//push the mid entry to the parent node, update the index:
 		updateParent = true;
@@ -622,25 +624,23 @@ RC IndexManager::insertEntry(IXFileHandle &ixfileHandle,
 
 		//and copy to the page directly
 	}else{
-		//RC rc2 = insertToLeaf();
-		//return rc2;
-		//there is no need for parent, just insert at this page and check for split
-		stack<short>internalStack;
+
+		stack<unsigned int>internalStack;
 		rc = getLeafNode(ixfileHandle.fileHandle, attribute, key, internalStack);
 		if(rc < 0) return rc;
 
 		/***********need check**********/
 
-		short leafPage = internalStack.empty() ? 1 : internalStack.top();
+		unsigned int leafPage = internalStack.empty() ? 1 : internalStack.top();
 		if(! internalStack.empty()){
 			internalStack.pop();
 		}
-		short rightChildPageNum = -1;
+		unsigned int rightChildPageNum = redirected;
 		bool updateParent = false;
 		void *keyToLift = malloc(54);
 		rc = insertToLeaf(ixfileHandle.fileHandle,attribute,leafPage, key, rid , keyToLift, rightChildPageNum, updateParent);
-		if(updateParent && rightChildPageNum > 0){
-			short parentPageNum = internalStack.empty() ? -1 : internalStack.top();
+		if(updateParent && rightChildPageNum != redirected){
+			unsigned int parentPageNum = internalStack.empty() ? redirected : internalStack.top();
 			if(!internalStack.empty()){
 				internalStack.pop();
 			}
@@ -649,30 +649,21 @@ RC IndexManager::insertEntry(IXFileHandle &ixfileHandle,
 		}
 		free(keyToLift);
 	} //else{
-	//	getParent();
-		//insertToLeaf();
-		//else:find the parent and the leaf node for insertion
-	//}
-	//insert to leaf node->
-		//if the insertion doesn't need split:just insert
-		//else:split the leaf node and push the middle entry into its parent
-			//if the parent doesn't need to split: just insert into the node
-			//else:split the index node and push the middle entry into its parent, recurse on inserting to parent index node
 
 	return rc;
 }
 
-void getEntryFromOFP( FileHandle &fileHandle, void *overflow, const short &pageNum, const RID &rid, short &newOffset, bool &isFound){
+void getEntryFromOFP( FileHandle &fileHandle, void *overflow, const unsigned int &pageNum, const RID &rid, short &newOffset, bool &isFound){
 	fileHandle.readPage(pageNum, overflow);
 	newOffset = 0;
-	short freeSpaceOffset = *(short *)((char *)overflow+PAGE_SIZE-4);
+	short freeSpaceOffset = *(short *)((char *)overflow+PAGE_SIZE-2-RS);
 	short cursor = 0;
 	isFound = false;
-	short currentPageNum, currentSlotNum;
+	unsigned int currentPageNum, currentSlotNum;
 	//search in the current page:
 	for(; cursor<freeSpaceOffset; cursor +=4){
-		currentPageNum = *(short *)((char *)overflow + cursor);
-		currentSlotNum = *(short *)((char *)overflow + cursor + 2);
+		currentPageNum = *(unsigned int *)((char *)overflow + cursor);
+		currentSlotNum = *(unsigned int *)((char *)overflow + cursor + RS);
 		if(currentPageNum==rid.pageNum && currentSlotNum==rid.slotNum){
 			newOffset = cursor;
 			isFound = true;
@@ -681,45 +672,44 @@ void getEntryFromOFP( FileHandle &fileHandle, void *overflow, const short &pageN
 	}
 }
 
-RC deleteEntryInLeaf(FileHandle &fileHandle, const short &leafPageNum, const Attribute &attribute, const void *key, const RID &rid){
+RC deleteEntryInLeaf(FileHandle &fileHandle, const unsigned int &leafPageNum, const Attribute &attribute, const void *key, const RID &rid){
 	if(!fileHandle.alreadyOpen()) return -1;
 	void *buffer = malloc(PAGE_SIZE);
 	RC rc = fileHandle.readPage(leafPageNum,buffer);
-	cout << "pass line 675" << rc << endl;
 	if(rc<0) return rc;
 
 	bool doubled = false;
-	short isRoot, totalEntries, isLeaf, rightSibling, freeSpaceOffset;
+	unsigned int rightSibling;
+	short isRoot, totalEntries, isLeaf, freeSpaceOffset;
 	getDirectory(buffer,isRoot, totalEntries, isLeaf, rightSibling, freeSpaceOffset,doubled);
 	//if(rc<0) return rc;
 
 	//compare and find the entry to delete
 	bool isExist = false;
-	short offset = 8;
+	short offset = 6+RS;
 	for(int i=0; i<totalEntries; i++){
 		int res= compareWithKey(buffer, offset, key, attribute);
 		if(res>=0){
 			if(res==0) isExist=true;
 			break;
 		}else {
-			int len = attribute.type==TypeVarChar ? *(int *)((char *)buffer + offset)+4+4 : 4 + 4;
+			int len = attribute.type==TypeVarChar ? *(int *)((char *)buffer + offset)+4+ 2*RS : 4 + 2*RS;
 			offset += len;
 		}
 	}
-	cout <<"exist? " <<  isExist << endl;
 	if(!isExist) return -1; //no entry satisfies, wrong
 	//if exist, delete
 	int keyLen = attribute.type==TypeVarChar ? *(int *)key + 4 :4 ;
-	short entryPageNum = *(short *)((char *)buffer+offset+keyLen);
-	short entrySlotNum = *(short *)((char *)buffer+offset+keyLen+2);
+	unsigned int entryPageNum = *(unsigned int *)((char *)buffer+offset+keyLen);
+	unsigned int entrySlotNum = *(unsigned int *)((char *)buffer+offset+keyLen+RS);
 
-	if(entryPageNum != -1){// there is no overflow page, we only need to delete this one
+	if(entryPageNum != redirected){// there is no overflow page, we only need to delete this one
 		if(entryPageNum==rid.pageNum && entrySlotNum==rid.slotNum){
-			short endOffset = offset+keyLen+4;
+			short endOffset = offset+keyLen+2*RS;
 			memmove((char *)buffer+offset, (char *)buffer+endOffset, freeSpaceOffset-endOffset);
 			totalEntries -= 1;
 			memcpy((char *)buffer+2, &totalEntries, 2);
-			freeSpaceOffset -= (keyLen+4);
+			freeSpaceOffset -= (keyLen+2*RS);
 			memcpy((char *)buffer+PAGE_SIZE-2, &freeSpaceOffset, 2);
 			rc = fileHandle.writePage(leafPageNum,buffer);
 			free(buffer);
@@ -732,24 +722,24 @@ RC deleteEntryInLeaf(FileHandle &fileHandle, const short &leafPageNum, const Att
 		void *overflow = malloc(PAGE_SIZE);
 		short newOffset=0;
 		bool isFound=false;
-		short currentPageNum = entrySlotNum;
+		unsigned int currentPageNum = entrySlotNum;
 
 		getEntryFromOFP(fileHandle,overflow, currentPageNum, rid, newOffset, isFound);
-		short nextPageNum = *(short *)((char *)overflow+PAGE_SIZE-2);
-		short freeSpaceOffset  = *(short *)((char *)overflow+PAGE_SIZE-4);
+		unsigned int nextPageNum = *(unsigned int *)((char *)overflow+PAGE_SIZE-RS);
+		short freeSpaceOffset  = *(short *)((char *)overflow+PAGE_SIZE-2-RS);
 
 		if(!isFound){ //not found in the first page, then search all the following pages
-			while(nextPageNum != -1){
+			while(nextPageNum != redirected){
 				currentPageNum = nextPageNum;
 				getEntryFromOFP(fileHandle,overflow, currentPageNum, rid, newOffset, isFound);
 				if(isFound) break;
-				nextPageNum = *(short *)((char *)overflow +PAGE_SIZE -2);
+				nextPageNum = *(unsigned int*)((char *)overflow +PAGE_SIZE -RS);
 			}
 		}
 		if(isFound){
 			//delete in the current overflow page
-			memmove((char *)overflow+newOffset, (char *)overflow+newOffset+4, freeSpaceOffset-newOffset-4);
-			freeSpaceOffset -= 4;
+			memmove((char *)overflow+newOffset, (char *)overflow+newOffset+2*RS, freeSpaceOffset-newOffset-2*RS);
+			freeSpaceOffset -= 2*RS;
 			memcpy((char *)overflow+PAGE_SIZE-4, &freeSpaceOffset, 2);
 			rc = fileHandle.writePage(currentPageNum,overflow);
 			free(overflow);
@@ -768,60 +758,59 @@ RC IndexManager::deleteEntry(IXFileHandle &ixfileHandle, const Attribute &attrib
 {
 	//ixfileHandle.fileHandle;
 
-	stack<short> internalStack;
+	stack<unsigned int> internalStack;
 	RC rc = getLeafNode(ixfileHandle.fileHandle, attribute, key, internalStack);
-	cout << "pass 758" << endl;
 	if(rc<0){
 		return rc;
 	}
-	cout << "pass 762" << endl;
-	short leafPage = internalStack.empty() ? 1 : internalStack.top();
+
+	unsigned int leafPage = internalStack.empty() ? 1 : internalStack.top();
 	if(!internalStack.empty()){
 		internalStack.pop();
 	}
 
 	RC rc1 = deleteEntryInLeaf(ixfileHandle.fileHandle, leafPage, attribute, key, rid);
-	cout << "pass 769" << rc1 << endl;
     return rc1;
 }
 
 
-string printOverflowPage(FileHandle &fileHandle, const short &pageNum){
+string printOverflowPage(FileHandle &fileHandle, const unsigned int &pageNum){
 	string output = "";
 	void *overflow = malloc(PAGE_SIZE);
 	fileHandle.readPage(pageNum,overflow);
-	short freeSpaceOffset = *(short *)((char *)overflow+PAGE_SIZE-4);
-	short nextPageNum = *(short *)((char *)overflow + PAGE_SIZE -2);
+	short freeSpaceOffset = *(short *)((char *)overflow+PAGE_SIZE-2-RS);
+	unsigned int nextPageNum = *(unsigned int *)((char *)overflow + PAGE_SIZE -RS);
 	short start = 0;
-	short ridPageNum, ridSlotNum;
+	unsigned int ridPageNum, ridSlotNum;
 	//first page
 	for(int i=0;i<freeSpaceOffset/4; i++){
-		ridPageNum = *(short *)((char *)overflow+start);
-		start += 2;
-		ridSlotNum = *(short *)((char *)overflow+start);
-		start += 2;
+		ridPageNum = *(unsigned int *)((char *)overflow+start);
+		start += RS;
+		ridSlotNum = *(unsigned int *)((char *)overflow+start);
+		start += RS;
 
 		output = output + "(" + to_string(ridPageNum) + "," + to_string(ridSlotNum) +")";
 		if(i<freeSpaceOffset/4-1) output += ",";
 	}
 	//(1,1),(1,2),(2,3)
 	//following overflow pages
-	while(nextPageNum != -1){
+	while(nextPageNum != redirected){
 		fileHandle.readPage(nextPageNum, overflow);
-		nextPageNum = *(short *)((char *)overflow + PAGE_SIZE -2);
-		freeSpaceOffset = *(short *)((char *)overflow+PAGE_SIZE-4);
+		nextPageNum = *(unsigned int *)((char *)overflow + PAGE_SIZE -RS);
+		freeSpaceOffset = *(short *)((char *)overflow+PAGE_SIZE-2-RS);
 		start = 0;
 		for(int i=0;i<freeSpaceOffset/4; i++){
-			ridPageNum = *(short *)((char *)overflow+start);
-			start += 2;
-			ridSlotNum = *(short *)((char *)overflow+start);
-			start += 2;
+			ridPageNum = *(unsigned int *)((char *)overflow+start);
+			start += RS;
+			ridSlotNum = *(unsigned int*)((char *)overflow+start);
+			start += RS;
 
 			output = output + ",(" + to_string(ridPageNum) + "," + to_string(ridSlotNum) +")";
 		}
 	}
 	return output;
 }
+
 //printLeaf(fileHandle,node,attribute,depth,totalEntries);
 void printLeaf(FileHandle &fileHandle, void *leafNode, const Attribute &attribute, const int &depth, const short &totalEntries){
 	if(totalEntries == 0) return;
@@ -831,7 +820,7 @@ void printLeaf(FileHandle &fileHandle, void *leafNode, const Attribute &attribut
 	}
 	printf("{\"Keys\":[");
 	//bool isExist = false;
-	short start = 8;
+	short start = 6+RS;
 	for (int i=0; i<totalEntries; i++){
 		if(i!= 0) printf(",");
 		printf("\"");
@@ -855,10 +844,10 @@ void printLeaf(FileHandle &fileHandle, void *leafNode, const Attribute &attribut
 		}
 		printf("[");
 		//check if there is overflow page
-		short entryPageNum = *(short *)((char *)leafNode+start);
-		short entrySlotNum = *(short *)((char *)leafNode+start+2);
-		start += 4;
-		if(entryPageNum == -1){
+		unsigned int entryPageNum = *(unsigned int *)((char *)leafNode+start);
+		unsigned int entrySlotNum = *(unsigned int *)((char *)leafNode+start+RS);
+		start += RS*2;
+		if(entryPageNum == redirected){
 			//isExist = true;
 			//overflow page
 			string output = printOverflowPage(fileHandle, entrySlotNum);
@@ -872,12 +861,13 @@ void printLeaf(FileHandle &fileHandle, void *leafNode, const Attribute &attribut
 	printf("]}\n");
 }
 //printInternalNode(fileHandle, attribute, 0, rootPageNum);
-void printInternalNode(FileHandle &fileHandle, const Attribute &attribute, const int &depth, const short &printPageNum){
+void printInternalNode(FileHandle &fileHandle, const Attribute &attribute, const int &depth, const unsigned int &printPageNum){
 	void *node = malloc(PAGE_SIZE);
 	RC rc = fileHandle.readPage(printPageNum,node);
 	if(rc<0) return;
 
-	short isRoot, totalEntries, isLeaf, rightSibling, freeSpaceOffset;
+	unsigned int rightSibling;
+	short isRoot, totalEntries, isLeaf, freeSpaceOffset;
 	bool doubled = false;
 	getDirectory(node,isRoot, totalEntries, isLeaf, rightSibling, freeSpaceOffset,doubled);
 
@@ -892,13 +882,13 @@ void printInternalNode(FileHandle &fileHandle, const Attribute &attribute, const
 	}
 	printf( "{\"Keys\":[");
 
-	vector<short> childrenVector;
+	vector<unsigned int> childrenVector;
 	//short end = *(short *)((char *)node+PAGE_SIZE-2);
-	short start = 8;
-	short childNum = *(short *)((char *)node + start);
+	short start = 6+RS;
+	unsigned int childNum = *(unsigned int *)((char *)node + start);
 	childrenVector.push_back(childNum);
 
-	start += 2;
+	start += RS;
 	for (short i=0; i<totalEntries; i++){
 		if(i != 0) printf(",");
 		switch(attribute.type){
@@ -920,9 +910,9 @@ void printInternalNode(FileHandle &fileHandle, const Attribute &attribute, const
 			start += 4+stringLen;
 			break;
 		}
-		childNum = *(short *)((char *)node + start);
+		childNum = *(unsigned int *)((char *)node + start);
 		childrenVector.push_back(childNum);
-		start += 2;
+		start += RS;
 	}
 	printf("],\n");
 	for(int i=0; i<depth ; i++){
@@ -951,7 +941,7 @@ void IndexManager::printBtree(IXFileHandle &ixfileHandle, const Attribute &attri
 	FileHandle fileHandle = ixfileHandle.fileHandle;
 	unsigned int numOfPages = fileHandle.getNumberOfPages();
 	if(numOfPages == 0) return;
-	short rootPageNum = getRootPage(fileHandle);
+	unsigned int rootPageNum = getRootPage(fileHandle);
 	//When root is leaf; this situation will be solved in printInternalNode
 
 	/*if(numOfPages == 2){
@@ -989,8 +979,8 @@ bool isValid(const Attribute &attribute, const void *lowKey, const void *highKey
 	 return true;
 }
 
-RC findLeftPage(FileHandle &fileHandle, short &pageNum){
-	short rootPage = getRootPage(fileHandle);
+RC findLeftPage(FileHandle &fileHandle, unsigned int &pageNum){
+	unsigned int rootPage = getRootPage(fileHandle);
 	cout << "rootPage is "<< rootPage << endl;
 	void *buffer = malloc(PAGE_SIZE);
 	short isLeaf;
@@ -1002,7 +992,7 @@ RC findLeftPage(FileHandle &fileHandle, short &pageNum){
 			break;
 
 		}else{
-			rootPage = *(short *)((char *)buffer + 8);
+			rootPage = *(unsigned int *)((char *)buffer + 6 +RS);
 		}
 		//rootPage = *(short *)((char *)buffer + 8);
 	}
@@ -1025,12 +1015,12 @@ RC IndexManager::scan(IXFileHandle &ixfileHandle,
 	if(!isValid(attribute, lowKey, highKey, lowKeyInclusive, highKeyInclusive)){
 		return -1;
 	}
-	short curPage = -1;
+	unsigned int curPage = redirected;
 	if(lowKey == NULL){
 		findLeftPage(ixfileHandle.fileHandle, curPage);
 		cout << "go through 1005 " << endl;
 	}else{
-		stack<short> internalStack;
+		stack<unsigned int> internalStack;
 		RC rc1 = getLeafNode(ixfileHandle.fileHandle, attribute, lowKey , internalStack); // find leaf;
 		if(rc1 < 0 || internalStack.empty()){
 			return -1;
@@ -1040,13 +1030,13 @@ RC IndexManager::scan(IXFileHandle &ixfileHandle,
 	}
 	void *page = malloc(PAGE_SIZE);
 	ixfileHandle.fileHandle.readPage(curPage, page);
-	short offset = lowKey == NULL ? 8 : -1;
+	short offset = lowKey == NULL ? 6+RS : -1;
 	//void *key = malloc(54);
 
 	void *overFlow = malloc(PAGE_SIZE);
 	RID rid;
-	rid.pageNum = -1;
-	rid.slotNum = -1;
+	rid.pageNum = redirected;
+	rid.slotNum = redirected;
 //	ix_ScanIterator.initializeSI(ixfileHandle, ixfileHandle.fileHandle, attribute, curPage,
 //		        		offset, lowKeyInclusive, highKeyInclusive, key, page, lowKey, highKey, overFlow, rid);
 	ix_ScanIterator.initializeSI(ixfileHandle, ixfileHandle.fileHandle, attribute, curPage, offset, lowKeyInclusive, highKeyInclusive, page, lowKey, highKey, overFlow, rid);
@@ -1058,7 +1048,7 @@ RC IndexManager::scan(IXFileHandle &ixfileHandle,
 
 IX_ScanIterator::IX_ScanIterator()
 {
-	curPage = -1;
+	curPage = redirected;
 	lowIncluded = false;
 	highIncluded = false;
 	offSet = -1;
@@ -1102,17 +1092,17 @@ bool validOffset(const void* page, const short &offset, const void *low, const v
 RC IX_ScanIterator::getNextEntry(RID &rid, void *key)
 {
 	if(offSet == -2) return IX_EOF;
-
-	short parent, totalKeys, leaf, nextPage, freeSpace;
+	unsigned int nextPage;
+	short parent, totalKeys, leaf, freeSpace;
 	bool doubled = false;
 	getDirectory(curLeaf, parent, totalKeys, leaf, nextPage, freeSpace, doubled);
 	while(offSet == -1 || offSet >= freeSpace){
 		if(low == NULL) {
-			offSet = 8;
+			offSet = 6+RS;
 		}
 		else{
 			//this is for the first time scan to find the starting point.
-			short start = 8;
+			short start = 6+RS;
 			int i = 0;
 			for(; i < totalKeys; i++) {
 				int res = compareWithKey(curLeaf, start, low, attribute);
@@ -1121,18 +1111,16 @@ RC IX_ScanIterator::getNextEntry(RID &rid, void *key)
 					break;
 				}
 				start += attribute.type == TypeVarChar? *(int *)((char *)curLeaf + start) + 4 : 4;
-				start += 4;
+				start += 2*RS;
 			}
 		//	if(nextPage == -1) return IX_EOF;
 //			if(offSet == 8 && isEmpty(curLeaf, offSet) && nextPage==-1){
 //			 				return IX_EOF;
 //			 	}
 			if(i == totalKeys){
-				if( nextPage == -1){
+				if( nextPage == redirected){
 					return IX_EOF;
 				}
-
-
 				fileHandle.readPage(nextPage, curLeaf);
 				curPage = nextPage;
 			    getDirectory(curLeaf, parent, totalKeys, leaf, nextPage, freeSpace, doubled);
@@ -1170,25 +1158,29 @@ RC IX_ScanIterator::getNextEntry(RID &rid, void *key)
 		if(validOffset(curLeaf,offSet, low, high, attribute, lowIncluded, highIncluded)){
 			int keyLen = attribute.type == TypeVarChar? *(int *)((char *)curLeaf + offSet) + 4 : 4;
 			memcpy(key, (char *)curLeaf + offSet, keyLen);
-			while(*(short *)((char *)curLeaf + offSet + keyLen) == -1){
-				if(overFlowOffset == -1){
-					short overflowPage = *(short *)((char *)curLeaf + offSet + keyLen + 2);
+			cout<<"line 1161"<<endl;
+			cout<<"flag "<<*(unsigned int *)((char *)curLeaf + offSet + keyLen)<<endl;
+			while(*(unsigned int *)((char *)curLeaf + offSet + keyLen) == redirected){//for this key, there is overflow page
+				if(overFlowOffset == -1){ //first time read overflow
+					cout<<"1164"<<endl;
+					unsigned int overflowPage = *(unsigned int *)((char *)curLeaf + offSet + keyLen + RS);
 					fileHandle.readPage(overflowPage, overFlow);
 					overFlowOffset = 0;
 				}
+				cout<<"1169"<<endl;
+				short freeSpaceOF = *(short *)((char *)overFlow + PAGE_SIZE - RS-2);
+				unsigned int nextOF = *(unsigned int *)((char *)overFlow + PAGE_SIZE-RS);
 
-				short freeSpaceOF = *(short *)((char *)overFlow + PAGE_SIZE - 4);
-				short nextOF = *(short *)((char *)overFlow + PAGE_SIZE-2);
-
-				while(overFlowOffset >= freeSpaceOF && nextOF != -1){
+				while(overFlowOffset >= freeSpaceOF && nextOF != redirected){
+					cout<<"1175"<<endl;
 					fileHandle.readPage(nextOF, overFlow);
-					freeSpaceOF = *(short *)((char *)overFlow + PAGE_SIZE - 4);
-					nextOF = *(short *)((char *)overFlow + PAGE_SIZE-2);
+					freeSpaceOF = *(short *)((char *)overFlow + PAGE_SIZE - RS -2);
+					nextOF = *(unsigned int *)((char *)overFlow + PAGE_SIZE-RS);
 					overFlowOffset = 0;
 				}
-				if(overFlowOffset >= freeSpaceOF && nextOF == -1){
-
-					offSet += (keyLen + 4);
+				if(overFlowOffset >= freeSpaceOF && nextOF == redirected){
+					cout<<"1181"<<endl;
+					offSet += (keyLen + 2*RS);
 					if(! validOffset(curLeaf,offSet, low, high, attribute, lowIncluded, highIncluded)){
 						return IX_EOF;
 					}
@@ -1199,16 +1191,16 @@ RC IX_ScanIterator::getNextEntry(RID &rid, void *key)
 				}
 				else{
 
-					rid.pageNum = *(short *)((char *)overFlow + overFlowOffset);
-					rid.slotNum = *(short *)((char *)overFlow + overFlowOffset + 2);
-				    overFlowOffset += 4;
+					rid.pageNum = *(unsigned int *)((char *)overFlow + overFlowOffset);
+					rid.slotNum = *(unsigned int *)((char *)overFlow + overFlowOffset + RS);
+				    overFlowOffset += 2*RS;
 				    return 0;
 
 				}
 			}
-			rid.pageNum = *(short *)((char *)curLeaf + offSet + keyLen);
-			rid.slotNum = *(short *)((char *)curLeaf + offSet + keyLen + 2);
-			offSet += (keyLen + 4);
+			rid.pageNum = *(unsigned int*)((char *)curLeaf + offSet + keyLen);
+			rid.slotNum = *(unsigned int*)((char *)curLeaf + offSet + keyLen + RS);
+			offSet += (keyLen + 2*RS);
 
 		}else{
 			return IX_EOF;
@@ -1216,78 +1208,16 @@ RC IX_ScanIterator::getNextEntry(RID &rid, void *key)
 
 
 	if(offSet >= freeSpace) {
-		if(nextPage == -1) {
+		if(nextPage == redirected) {
 			offSet = -2;
 		}else{
 			fileHandle.readPage(nextPage, curLeaf);
-			offSet = 8; //that is for the non-first page scan;
+			offSet = 6+RS; //that is for the non-first page scan;
 		   curPage = nextPage;
 		}
-
 	}
 
 	return 0;
-
-
-//	int comp1 = compareWithKey(curLeaf, offSet, low, attribute);
-//	int comp2 = compareWithKey(curLeaf, offSet, high, attribute);
-//	if((comp1 == 0 && lowIncluded) || comp1 > 0){
-//		if((comp2 == 0 && highIncluded) || comp2 < 0){
-//			int keyLen = attribute.type == TypeVarChar? *(int *)((char *)curLeaf + offSet) + 4 : 4;
-//			memcpy(key, (char *)curLeaf + offSet, keyLen);
-//			if(*(short *)((char *)curLeaf + offSet + keyLen) == -1){
-//				if(overFlowOffset == -1){
-//					short overflowPage = *(short *)((char *)curLeaf + offSet + keyLen) + 2;
-//					fileHandle.readPage(overflowPage, overFlow);
-//					overFlowOffset = 8;
-//					//inOverFlow = true;
-//				}
-//				short freeSpaceOF = -1;
-//				short nextOF = 0;
-//				while(nextOF != -1){
-//					freeSpaceOF = *(short *)((char *)overFlow + PAGE_SIZE - 4);
-//					nextOF = *(short *)((char *)overFlow + PAGE_SIZE-2);
-//					if(overFlowOffset < freeSpaceOF){
-//						rid.pageNum = *(short *)((char *)overFlow + overFlowOffset);
-//						rid.slotNum = *(short *)((char *)overFlow + overFlowOffset + 2);
-//						overFlowOffset += 4;
-//						if(overFlowOffset == freeSpaceOF && nextOF == -1){
-//							offSet += (keyLen + 4);
-//							break;
-//						}else if(overFlowOffset == freeSpaceOF){
-//							fileHandle.readPage(nextOF, overFlow);
-//							overFlowOffset = 8;
-//						}
-//
-//					}else{
-//						if(nextOF == -1){
-//							offSet += (keyLen + 4);
-//
-//						}
-//					}
-//
-//
-//				}
-//				if(overFlowOffset >= freeSpaceOF){
-//					if(nextOF == -1){
-//						offSet += (keyLen + 4);
-//					}
-//					else{
-//						fileHandle.readPage(nextOF, overFlow);
-//						overFlowOffset = 8;
-//					}
-//				}
-//				rid.pageNum = *(short *)((char *)overFlow + overFlowOffset);
-//				rid.slotNum = *(short *)((char *)overFlow + overFlowOffset + 2);
-//				overFlowOffset += 4;
-//
-//			}else{
-//				rid.pageNum = *(short *)((char *)curLeaf + offSet + keyLen);
-//				rid.slotNum = *(short *)((char *)curLeaf + offSet + keyLen) + 2;
-//				offSet += (keyLen + 4);
-//			}
-//		}
-//	}
 
 }
 

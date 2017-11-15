@@ -7,7 +7,8 @@
 #include "../rbf/rbfm.h"
 
 # define IX_EOF (-1)  // end of the index scan
-# define uisize = sizeof(unsinged int);
+# define RS 4
+# define redirected 0xFFFFFFFF
 
 class IX_ScanIterator;
 class IXFileHandle;
@@ -70,7 +71,7 @@ class IX_ScanIterator {
 
         // Terminate index scan
         RC close();
-        RC initializeSI(IXFileHandle &ixfileHandle, FileHandle &fileHandle, const Attribute &attribute, const short & curPage,
+        RC initializeSI(IXFileHandle &ixfileHandle, FileHandle &fileHandle, const Attribute &attribute, const unsigned int & curPage,
         		const short &offSet,const bool lowI, const bool highI, void *curLeaf, const void *low,const void *high, void *overFlow,  RID &rid){
         			//this->ixfileHandle = ixfileHandle;
         			this->fileHandle = fileHandle;
@@ -92,7 +93,7 @@ class IX_ScanIterator {
         //IXFileHandle ixfileHandle;
         FileHandle fileHandle;
         Attribute attribute;
-        short curPage;
+        unsigned int curPage;
         short offSet;
         bool lowIncluded;
         bool highIncluded;
