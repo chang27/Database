@@ -1168,7 +1168,7 @@ RC IX_ScanIterator::getNextEntry(RID &rid, void *key)
 			//this is for the first time scan to find the starting point.
 			short start = 6+RS;
 			//int cursor = 6+RS;
-			while(start<freeSpace) {
+			while(totalKeys != 0 && start<freeSpace) {
 				int res = compareWithKey(curLeaf, start, low, attribute);
 				if(res >= 0) {
 					offSet = start;
@@ -1183,7 +1183,7 @@ RC IX_ScanIterator::getNextEntry(RID &rid, void *key)
 //			if(offSet == 8 && isEmpty(curLeaf, offSet) && nextPage==-1){
 //			 				return IX_EOF;
 //			 	}
-			if(start >= freeSpace){
+			if(totalKeys == 0 || start >= freeSpace){
 				if( nextPage == redirected){
 					return IX_EOF;
 				}
