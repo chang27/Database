@@ -994,7 +994,7 @@ void printInternalNode(FileHandle &fileHandle, const Attribute &attribute, const
 	for(int i=0; i<depth ; i++){
 		printf("\t");
 	}
-	printf( "{\"Children\":[\n");
+	printf( "\"Children\":[\n");
 	//print out children
 	int numOfChildren = childrenVector.size();
 	for(int i=0; i<numOfChildren; i++){
@@ -1216,14 +1216,33 @@ RC IX_ScanIterator::getNextEntry(RID &rid, void *key)
 				}
 				if(overFlowOffset >= freeSpaceOF && nextOF == redirected){
 					offSet += (keyLen + 2*RS);
-					if(offSet == freeSpace || ! validOffset(curLeaf,offSet, low, high, attribute, lowIncluded, highIncluded)){
+					if((offSet >= freeSpace && nextPage == redirected) || ! validOffset(curLeaf,offSet, low, high, attribute, lowIncluded, highIncluded)){
 						return IX_EOF;
+					}// change to next page:
+					if(offSet >= freeSpace){
+						fileHandle.readPage(nextPage, curLeaf);
+						offSet = 6+RS; //that is for the non-first page scan;
+						curPage = nextPage;
+						getDirectory(curLeaf, parent, totalKeys, leaf, nextPage, freeSpace, doubled);
+						while((totalKeys == 0 || offSet >= freeSpace) && nextPage != redirected) {
+							fileHandle.readPage(nextPage, curLeaf);
+							offSet = 6+RS; //that is for the non-first page scan;
+							curPage = nextPage;
+							getDirectory(curLeaf, parent, totalKeys, leaf, nextPage, freeSpace, doubled);
+						}
+						if(nextPage == redirected && (totalKeys == 0 || offSet >= freeSpace)){
+							return IX_EOF;
+						}
+						if(totalKeys != 0 && offSet < freeSpace && !validOffset(curLeaf,offSet, low, high, attribute, lowIncluded, highIncluded)){
+							return IX_EOF;
+						}
+						//keyLen = attribute.type == TypeVarChar? *(int *)((char *)curLeaf + offSet) + 4 : 4;
+
 					}
 					keyLen = attribute.type == TypeVarChar? *(int *)((char *)curLeaf + offSet) + 4 : 4;
 					memcpy(key, (char *)curLeaf + offSet, keyLen);
 					overFlowOffset = -1;
-
-				}
+					}
 				else{
 
 					rid.pageNum = *(unsigned int *)((char *)overFlow + overFlowOffset);
