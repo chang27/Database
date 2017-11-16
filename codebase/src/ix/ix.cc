@@ -1216,7 +1216,7 @@ RC IX_ScanIterator::getNextEntry(RID &rid, void *key)
 				}
 				if(overFlowOffset >= freeSpaceOF && nextOF == redirected){
 					offSet += (keyLen + 2*RS);
-					if(! validOffset(curLeaf,offSet, low, high, attribute, lowIncluded, highIncluded)){
+					if(offSet == freeSpace || ! validOffset(curLeaf,offSet, low, high, attribute, lowIncluded, highIncluded)){
 						return IX_EOF;
 					}
 					keyLen = attribute.type == TypeVarChar? *(int *)((char *)curLeaf + offSet) + 4 : 4;
@@ -1259,8 +1259,15 @@ RC IX_ScanIterator::getNextEntry(RID &rid, void *key)
 
 RC IX_ScanIterator::close()
 {
-    low = NULL;
-    high = NULL;
+	curPage = redirected;
+	lowIncluded = false;
+	highIncluded = false;
+	offSet = -1;
+	curLeaf = NULL;
+	low = NULL;
+	high = NULL;
+	overFlow = NULL;
+	overFlowOffset = -1;
 	free(overFlow);
     free(curLeaf);
 	return 0;
